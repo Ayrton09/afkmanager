@@ -1,0 +1,32 @@
+{
+  "_note": "All time values are seconds. Set any action time to 0 to disable that action. Language is controlled only by the language setting.",
+
+  "enabled": true,
+  "language": "en",
+
+  "check_interval_seconds": 5.0,
+
+  "spawn_warning_time_seconds": 10.0,
+  "spawn_move_to_spectator_time_seconds": 15.0,
+
+  "warning_time_seconds": 30.0,
+  "move_to_spectator_time_seconds": 90.0,
+  "kick_time_seconds": 0.0,
+
+  "no_team_move_to_spectator_time_seconds": 10.0,
+  "no_team_kick_time_seconds": 0.0,
+
+  "repeat_warning_interval_seconds": 5.0,
+
+  "ignore_bots": true,
+  "ignore_spectators": true,
+
+  "admin_immunity": false,
+  "admin_immunity_flags": [
+    "@css/generic"
+  ],
+
+  "log_actions": false,
+
+  "ConfigVersion": 3
+}

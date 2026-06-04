@@ -1,0 +1,14 @@
+{
+  "prefix": "[afk manager]",
+  "afk_warning": "{prefix} Du bist AFK. Beweg dich, sonst wirst du {action}.",
+  "spawn_warning": "{prefix} Du bist am Spawn AFK. Beweg dich, sonst wirst du {action}.",
+  "action_move_seconds": "in {seconds} Sekunden zum Zuschauer verschoben",
+  "action_kick_seconds": "in {seconds} Sekunden gekickt",
+  "action_moved_soon": "bald zum Zuschauer verschoben",
+  "action_kicked_soon": "bald gekickt",
+  "action_punished_soon": "bald bestraft",
+  "kick_reason": "Gekickt wegen AFK",
+  "no_team_kick_reason": "Gekickt, weil kein Team gewählt wurde",
+  "moved_to_spectator_afk": "{prefix} {player} wurde wegen AFK zum Zuschauer verschoben.",
+  "moved_to_spectator_spawn_afk": "{prefix} {player} wurde wegen AFK am Spawn zum Zuschauer verschoben."
+}
