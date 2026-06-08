@@ -140,7 +140,7 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
         ReloadLanguage();
         _service?.UpdateConfig(Config);
         StartCheckTimer();
-        command.ReplyToCommand($"{Prefix} Settings reloaded. language={Config.Language}");
+        command.ReplyToCommand($"{Prefix} Settings reloaded. css_language={GetCounterStrikeSharpLanguageName()}");
     }
 
     [ConsoleCommand("css_afk_enabled", "Gets or sets AFK Manager enabled state.")]
@@ -176,7 +176,7 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
     [RequiresPermissions("@css/config")]
     public void OnConfigCommand(CCSPlayerController? player, CommandInfo command)
     {
-        command.ReplyToCommand($"{Prefix} enabled={(Config.Enabled ? 1 : 0)} language={Config.Language} check_interval={Config.CheckIntervalSeconds}s");
+        command.ReplyToCommand($"{Prefix} enabled={(Config.Enabled ? 1 : 0)} css_language={GetCounterStrikeSharpLanguageName()} check_interval={Config.CheckIntervalSeconds}s");
         command.ReplyToCommand($"{Prefix} spawn_warning={FormatConfigSeconds(Config.SpawnWarningTimeSeconds)} spawn_move={FormatConfigSeconds(Config.SpawnMoveToSpectatorTimeSeconds)} repeat_warning={FormatConfigSeconds(Config.RepeatWarningIntervalSeconds)}");
         command.ReplyToCommand($"{Prefix} warning={FormatConfigSeconds(Config.WarningTimeSeconds)} move={FormatConfigSeconds(Config.MoveToSpectatorTimeSeconds)} kick={FormatConfigSeconds(Config.KickTimeSeconds)}");
         command.ReplyToCommand($"{Prefix} no_team_move={FormatConfigSeconds(Config.NoTeamMoveToSpectatorTimeSeconds)} no_team_kick={FormatConfigSeconds(Config.NoTeamKickTimeSeconds)}");
@@ -235,7 +235,13 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
     {
         _languageManager ??= new AfkLanguageManager(GetPluginDirectory(), Logger);
         _languageManager.ClearCache();
-        _languageManager.Load(Config.Language);
+        _languageManager.LoadCounterStrikeSharpLanguage();
+    }
+
+    private string GetCounterStrikeSharpLanguageName()
+    {
+        _languageManager ??= new AfkLanguageManager(GetPluginDirectory(), Logger);
+        return _languageManager.GetCounterStrikeSharpLanguageName();
     }
 
     private string GetPluginDirectory()

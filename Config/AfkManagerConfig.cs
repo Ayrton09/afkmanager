@@ -5,13 +5,10 @@ namespace AfkManager.Config;
 
 public sealed class AfkManagerConfig : BasePluginConfig
 {
-    public override int Version { get; set; } = 3;
+    public override int Version { get; set; } = 4;
 
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; } = true;
-
-    [JsonPropertyName("language")]
-    public string Language { get; set; } = "en";
 
     [JsonPropertyName("check_interval_seconds")]
     public float CheckIntervalSeconds { get; set; } = 5.0f;
@@ -70,7 +67,6 @@ public sealed class AfkManagerConfig : BasePluginConfig
         NoTeamKickTimeSeconds = NormalizeThreshold(NoTeamKickTimeSeconds);
         RepeatWarningIntervalSeconds = NormalizeThreshold(RepeatWarningIntervalSeconds);
 
-        Language = NormalizeText(Language, "en").ToLowerInvariant();
         AdminImmunityFlags ??= [];
         AdminImmunityFlags = AdminImmunityFlags
             .Where(flag => !string.IsNullOrWhiteSpace(flag))
@@ -93,10 +89,5 @@ public sealed class AfkManagerConfig : BasePluginConfig
     private static float NormalizeThreshold(float value)
     {
         return value <= 0 ? -1.0f : value;
-    }
-
-    private static string NormalizeText(string value, string fallback)
-    {
-        return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
     }
 }

@@ -19,13 +19,9 @@
 
 ## Language
 
-Set `language` in the config:
+The plugin uses the language configured in CounterStrikeSharp `ServerLanguage`.
 
-```json
-"language": "en"
-```
-
-The plugin uses this configured language for everyone. It does not read CounterStrikeSharp/core server language.
+Example: if CounterStrikeSharp is configured with `ServerLanguage` set to `es`, AFK Manager uses `Lang/es.json`.
 
 Language files live in:
 

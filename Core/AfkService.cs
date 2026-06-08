@@ -708,7 +708,7 @@ public sealed class AfkService
 
     private AfkLanguage GetLanguage(CCSPlayerController player)
     {
-        return _languageManager.Load(_config.Language);
+        return _languageManager.LoadCounterStrikeSharpLanguage();
     }
 }
 

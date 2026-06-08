@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
@@ -29,6 +30,16 @@ public sealed class AfkLanguageManager
     {
         var normalizedLanguage = NormalizeLanguage(language, BuiltInFallbackLanguage);
         return LoadWithFallback(normalizedLanguage, BuiltInFallbackLanguage, logMissing: true);
+    }
+
+    public AfkLanguage LoadCounterStrikeSharpLanguage()
+    {
+        return LoadWithFallback(GetCounterStrikeSharpLanguage(), BuiltInFallbackLanguage, logMissing: false);
+    }
+
+    public string GetCounterStrikeSharpLanguageName()
+    {
+        return GetCounterStrikeSharpLanguage();
     }
 
     public void ClearCache()
@@ -110,6 +121,12 @@ public sealed class AfkLanguageManager
     private static string NormalizeLanguage(string? language, string fallback)
     {
         return string.IsNullOrWhiteSpace(language) ? fallback : language.Trim().ToLowerInvariant();
+    }
+
+    private static string GetCounterStrikeSharpLanguage()
+    {
+        var culture = CultureInfo.DefaultThreadCurrentUICulture ?? CultureInfo.CurrentUICulture;
+        return NormalizeLanguage(culture.Name, BuiltInFallbackLanguage);
     }
 
     private static string GetNeutralLanguage(string language)

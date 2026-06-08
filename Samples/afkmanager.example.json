@@ -1,8 +1,7 @@
 {
-  "_note": "All time values are seconds. Set any action time to 0 to disable that action. Language is controlled only by the language setting.",
+  "_note": "All time values are seconds. Set any action time to 0 to disable that action. Language is read from CounterStrikeSharp ServerLanguage.",
 
   "enabled": true,
-  "language": "en",
 
   "check_interval_seconds": 5.0,
 
@@ -28,5 +27,5 @@
 
   "log_actions": false,
 
-  "ConfigVersion": 3
+  "ConfigVersion": 4
 }
