@@ -22,7 +22,7 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
     private CounterStrikeSharp.API.Modules.Timers.Timer? _checkTimer;
 
     public override string ModuleName => "afkmanager";
-    public override string ModuleVersion => "1.0.0";
+    public override string ModuleVersion => "1.0.1";
     public override string ModuleAuthor => "Ayrton09";
     public override string ModuleDescription => string.Empty;
 

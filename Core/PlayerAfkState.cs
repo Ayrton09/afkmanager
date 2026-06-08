@@ -1,4 +1,3 @@
-using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Modules.Utils;
 
 namespace AfkManager.Core;
@@ -36,9 +35,7 @@ public sealed class PlayerAfkState
     public bool HasSample { get; private set; }
     public bool HasAliveState { get; private set; }
     public bool IsAlive { get; private set; }
-    public PositionSample LastPosition { get; private set; }
     public AngleSample LastViewAngles { get; private set; }
-    public PlayerButtons LastButtons { get; private set; }
 
     public void RefreshIdentity(int userId, string playerName, DateTimeOffset now)
     {
@@ -99,17 +96,15 @@ public sealed class PlayerAfkState
         MovedToSpectatorForSpawn = false;
     }
 
-    public void SetSample(PositionSample position, AngleSample viewAngles, PlayerButtons buttons)
+    public void SetSample(AngleSample viewAngles)
     {
-        LastPosition = position;
         LastViewAngles = viewAngles;
-        LastButtons = buttons;
         HasSample = true;
     }
 
-    public void MarkActive(DateTimeOffset now, PositionSample position, AngleSample viewAngles, PlayerButtons buttons)
+    public void MarkActive(DateTimeOffset now, AngleSample viewAngles)
     {
-        SetSample(position, viewAngles, buttons);
+        SetSample(viewAngles);
         HasActivitySinceSpawn = true;
         ResetActivity(now);
     }
@@ -146,22 +141,6 @@ public sealed class PlayerAfkState
         LastSpawnWarningAt = null;
         LastSpawnWarningRemainingSeconds = 0;
         MovedToSpectatorForSpawn = false;
-    }
-}
-
-public readonly record struct PositionSample(float X, float Y, float Z)
-{
-    public static PositionSample FromVector(Vector vector)
-    {
-        return new PositionSample(vector.X, vector.Y, vector.Z);
-    }
-
-    public float DistanceSquaredTo(PositionSample other)
-    {
-        var dx = X - other.X;
-        var dy = Y - other.Y;
-        var dz = Z - other.Z;
-        return dx * dx + dy * dy + dz * dz;
     }
 }
 

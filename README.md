@@ -2,9 +2,9 @@
 
 ## Detection Rules
 
-- Players on a playable team are considered active when their position changes, their view angles change, or their button state changes.
+- Players on a playable team are considered active only when their view angles change.
 - Spawn AFK tracking starts on player spawn, team change when the player becomes alive on T/CT, and round freeze end for alive T/CT players.
-- Movement and view angle checks use small configurable tolerances to avoid false positives from tiny jitter.
+- View angle checks use a small tolerance to avoid false positives from tiny jitter.
 - Dead players are ignored and their AFK timer is reset while they wait to respawn.
 - Players with no selected team are tracked separately by time spent in the no-team/team-selection state. They are not treated as spectators and are not exempted by `ignore_spectators`.
 - Spectators are ignored by default with `ignore_spectators`. This does not ignore players who are still in team selection.
@@ -52,8 +52,8 @@ All thresholds are seconds. Set a threshold to `0` to disable that stage.
 For team players:
 
 1. `spawn_warning_time_seconds`: how many seconds before the spawn move action countdown warnings start.
-2. `spawn_move_to_spectator_time_seconds`: moves a still-idle spawn AFK player to spectator.
-3. After the player has shown activity since spawn, `warning_time_seconds` controls how many seconds before the normal move/kick action countdown warnings start.
+2. `spawn_move_to_spectator_time_seconds`: moves a player to spectator if they spawned and never moved their view.
+3. After the player has moved their view once, `warning_time_seconds` controls how many seconds before the normal move/kick action countdown warnings start.
 4. `move_to_spectator_time_seconds`: moves the player to spectator once.
 5. `kick_time_seconds`: kicks the player once with the language file's `kick_reason`. If the plugin already moved the player to spectator, the kick timer can still finish without sending spectator warning spam. Default is `0`, disabled.
 

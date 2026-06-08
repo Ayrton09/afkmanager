@@ -11,7 +11,6 @@ namespace AfkManager.Core;
 public sealed class AfkService
 {
     private const string Prefix = "[afkmanager]";
-    private const float MovementToleranceUnits = 8.0f;
     private const float ViewAngleToleranceDegrees = 3.0f;
     private readonly ILogger _logger;
     private readonly Action<string> _executeServerCommand;
@@ -52,9 +51,9 @@ public sealed class AfkService
         var state = GetOrCreateState(player, now);
         state.ResetAllTracking(now);
 
-        if (TryReadSample(player, out var position, out var viewAngles, out var buttons))
+        if (TryReadViewAngles(player, out var viewAngles))
         {
-            state.SetSample(position, viewAngles, buttons);
+            state.SetSample(viewAngles);
         }
     }
 
@@ -69,9 +68,9 @@ public sealed class AfkService
         var state = GetOrCreateState(player, now);
         state.MarkSpawned(now);
 
-        if (TryReadSample(player, out var position, out var viewAngles, out var buttons))
+        if (TryReadViewAngles(player, out var viewAngles))
         {
-            state.SetSample(position, viewAngles, buttons);
+            state.SetSample(viewAngles);
         }
     }
 
@@ -367,14 +366,14 @@ public sealed class AfkService
 
     private void UpdateActivitySample(CCSPlayerController player, PlayerAfkState state, DateTimeOffset now)
     {
-        if (!TryReadSample(player, out var position, out var viewAngles, out var buttons))
+        if (!TryReadViewAngles(player, out var viewAngles))
         {
             return;
         }
 
         if (!state.HasSample)
         {
-            state.SetSample(position, viewAngles, buttons);
+            state.SetSample(viewAngles);
             if (state.SpawnedAt is not null && !state.HasActivitySinceSpawn)
             {
                 state.ResetSpawnClock(now);
@@ -383,26 +382,19 @@ public sealed class AfkService
             return;
         }
 
-        var movementToleranceSquared = MovementToleranceUnits * MovementToleranceUnits;
-        var moved = position.DistanceSquaredTo(state.LastPosition) > movementToleranceSquared;
         var looked = viewAngles.DifferenceTo(state.LastViewAngles) > ViewAngleToleranceDegrees;
-        var pressedButtons = buttons != state.LastButtons;
 
-        if (moved || looked || pressedButtons)
+        if (looked)
         {
-            state.MarkActive(now, position, viewAngles, buttons);
+            state.MarkActive(now, viewAngles);
         }
     }
 
-    private static bool TryReadSample(
+    private static bool TryReadViewAngles(
         CCSPlayerController player,
-        out PositionSample position,
-        out AngleSample viewAngles,
-        out PlayerButtons buttons)
+        out AngleSample viewAngles)
     {
-        position = default;
         viewAngles = default;
-        buttons = default;
 
         var pawn = player.PlayerPawn.Value;
         if (pawn is null || !pawn.IsValid)
@@ -410,16 +402,13 @@ public sealed class AfkService
             return false;
         }
 
-        var origin = pawn.AbsOrigin;
         var angles = pawn.EyeAngles;
-        if (origin is null || angles is null)
+        if (angles is null)
         {
             return false;
         }
 
-        position = PositionSample.FromVector(origin);
         viewAngles = AngleSample.FromQAngle(angles);
-        buttons = player.Buttons;
         return true;
     }
 
