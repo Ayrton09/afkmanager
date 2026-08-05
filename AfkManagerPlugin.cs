@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AfkManager;
 
-[MinimumApiVersion(80)]
+[MinimumApiVersion(369)]
 public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfig>
 {
     private const string Prefix = "[afkmanager]";
@@ -22,9 +22,9 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
     private CounterStrikeSharp.API.Modules.Timers.Timer? _checkTimer;
 
     public override string ModuleName => "afkmanager";
-    public override string ModuleVersion => "1.0.1";
+    public override string ModuleVersion => "1.1.0";
     public override string ModuleAuthor => "Ayrton09";
-    public override string ModuleDescription => string.Empty;
+    public override string ModuleDescription => "Warns, moves to spectator, and kicks AFK players.";
 
     public AfkManagerConfig Config { get; set; } = new();
 
@@ -39,7 +39,7 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
     {
         _languageManager = new AfkLanguageManager(GetPluginDirectory(), Logger);
         ReloadLanguage();
-        _service = new AfkService(Config, _languageManager, Logger, Server.ExecuteCommand);
+        _service = new AfkService(Config, _languageManager, Logger);
 
         RegisterListener<Listeners.OnMapStart>(OnMapStart);
         RegisterListener<Listeners.OnMapEnd>(OnMapEnd);
@@ -102,10 +102,28 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
     private HookResult OnPlayerTeam(EventPlayerTeam @event, GameEventInfo info)
     {
         var player = @event.Userid;
-        if (player is not null)
+        if (player is null || !player.IsValid)
         {
-            AddTimer(0.2f, () => _service?.MarkPlayerSpawnedIfAlive(player), TimerFlags.STOP_ON_MAPCHANGE);
+            return HookResult.Continue;
         }
+
+        // The controller must not be captured by the timer: if the player disconnects within the
+        // delay the callback would dereference a pointer the engine has already freed. Re-resolve
+        // from the slot instead, and match the user id so a slot reused by a new connection is not
+        // mistaken for the original player.
+        var slot = player.Slot;
+        var userId = player.UserId;
+
+        AddTimer(0.2f, () =>
+        {
+            var target = Utilities.GetPlayerFromSlot(slot);
+            if (target is null || !target.IsValid || target.UserId != userId)
+            {
+                return;
+            }
+
+            _service?.MarkPlayerSpawnedIfAlive(target);
+        }, TimerFlags.STOP_ON_MAPCHANGE);
 
         return HookResult.Continue;
     }
@@ -135,7 +153,18 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
     [RequiresPermissions("@css/config")]
     public void OnReloadCommand(CCSPlayerController? player, CommandInfo command)
     {
-        Config.Reload();
+        // Reload throws if the config file is missing or malformed. Without this guard the command
+        // would abort here, leaving the language, service config, and check timer un-refreshed.
+        try
+        {
+            Config.Reload();
+        }
+        catch (Exception exception)
+        {
+            Logger.LogError(exception, "{Prefix} Failed to reload the config file; keeping the values already in memory.", Prefix);
+            command.ReplyToCommand($"{Prefix} Could not read the config file, keeping current values. See the server log for details.");
+        }
+
         Config.Normalize();
         ReloadLanguage();
         _service?.UpdateConfig(Config);
@@ -187,14 +216,18 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
     [RequiresPermissions("@css/generic")]
     public void OnStatusCommand(CCSPlayerController? player, CommandInfo command)
     {
-        _languageManager ??= new AfkLanguageManager(GetPluginDirectory(), Logger);
-        _service ??= new AfkService(Config, _languageManager, Logger, Server.ExecuteCommand);
+        var service = _service;
+        if (service is null)
+        {
+            command.ReplyToCommand($"{Prefix} Plugin is not loaded.");
+            return;
+        }
 
         var players = command.ArgCount >= 2
-            ? _service.FindPlayers(command.GetArg(1)).ToArray()
-            : Utilities.GetPlayers().Where(candidate => candidate.IsValid && candidate.UserId is not null && candidate.UserId >= 0).ToArray();
+            ? service.FindPlayers(command.GetArg(1))
+            : Utilities.GetPlayers().Where(candidate => candidate.IsValid && candidate.UserId is not null && candidate.UserId >= 0).ToList();
 
-        if (players.Length == 0)
+        if (players.Count == 0)
         {
             command.ReplyToCommand($"{Prefix} No matching players.");
             return;
@@ -202,23 +235,27 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
 
         foreach (var target in players)
         {
-            command.ReplyToCommand($"{Prefix} {_service.DescribePlayer(target)}");
+            command.ReplyToCommand($"{Prefix} {service.DescribePlayer(target)}");
         }
     }
 
     [ConsoleCommand("css_afk_reset", "Resets AFK tracking for yourself or a target name/#userid.")]
     [CommandHelper(minArgs: 0, usage: "[target]", whoCanExecute: CommandUsage.CLIENT_AND_SERVER)]
-    [RequiresPermissions("@css/generic")]
+    [RequiresPermissions("@css/kick")]
     public void OnResetCommand(CCSPlayerController? player, CommandInfo command)
     {
-        _languageManager ??= new AfkLanguageManager(GetPluginDirectory(), Logger);
-        _service ??= new AfkService(Config, _languageManager, Logger, Server.ExecuteCommand);
+        var service = _service;
+        if (service is null)
+        {
+            command.ReplyToCommand($"{Prefix} Plugin is not loaded.");
+            return;
+        }
 
         var targets = command.ArgCount >= 2
-            ? _service.FindPlayers(command.GetArg(1)).ToArray()
-            : player is null ? [] : [player];
+            ? service.FindPlayers(command.GetArg(1))
+            : player is null ? [] : new List<CCSPlayerController> { player };
 
-        if (targets.Length == 0)
+        if (targets.Count == 0)
         {
             command.ReplyToCommand($"{Prefix} No target found. Use a player name or #userid from server console.");
             return;
@@ -226,8 +263,8 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
 
         foreach (var target in targets)
         {
-            _service.ResetPlayer(target);
-            command.ReplyToCommand($"{Prefix} Reset AFK timer for {target.PlayerName}.");
+            service.ResetPlayer(target);
+            command.ReplyToCommand($"{Prefix} Reset AFK timer for {ChatText.Sanitize(target.PlayerName)}.");
         }
     }
 

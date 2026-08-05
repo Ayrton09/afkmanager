@@ -76,8 +76,6 @@ public sealed class AfkManagerConfig : BasePluginConfig
         AdminImmunityFlagsArray = AdminImmunityFlags.ToArray();
     }
 
-    public bool IsWarningEnabled => WarningTimeSeconds > 0;
-    public bool IsSpawnWarningEnabled => SpawnWarningTimeSeconds > 0;
     public bool IsSpawnMoveEnabled => SpawnMoveToSpectatorTimeSeconds > 0;
     public bool IsMoveEnabled => MoveToSpectatorTimeSeconds > 0;
     public bool IsKickEnabled => KickTimeSeconds > 0;
