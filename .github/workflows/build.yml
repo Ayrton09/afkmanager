@@ -24,5 +24,8 @@ jobs:
         run: dotnet restore AfkManager.csproj
 
       - name: Build
-        run: dotnet build AfkManager.csproj --configuration Release --no-restore
+        run: dotnet build AfkManager.csproj --configuration Release --no-restore -warnaserror
+
+      - name: Test
+        run: dotnet run --project Tests --configuration Release
 
