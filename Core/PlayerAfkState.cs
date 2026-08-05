@@ -9,19 +9,16 @@ public sealed class PlayerAfkState
         Slot = slot;
         UserId = userId;
         PlayerName = playerName;
-        FirstSeenAt = now;
         LastActivityAt = now;
     }
 
     public int Slot { get; }
     public int UserId { get; private set; }
     public string PlayerName { get; private set; }
-    public DateTimeOffset FirstSeenAt { get; }
     public DateTimeOffset LastActivityAt { get; private set; }
     public DateTimeOffset? SpawnedAt { get; private set; }
+    public DateTimeOffset? DeadSince { get; private set; }
     public DateTimeOffset? NoTeamSince { get; set; }
-    public DateTimeOffset? LastWarningAt { get; set; }
-    public DateTimeOffset? LastSpawnWarningAt { get; set; }
     public int LastWarningRemainingSeconds { get; set; }
     public int LastSpawnWarningRemainingSeconds { get; set; }
     public bool WasWarned { get; set; }
@@ -36,6 +33,30 @@ public sealed class PlayerAfkState
     public bool HasAliveState { get; private set; }
     public bool IsAlive { get; private set; }
     public AngleSample LastViewAngles { get; private set; }
+
+    /// <summary>
+    /// Seconds since the player last moved their view. The clock is paused while the player is
+    /// dead so that waiting to respawn neither accumulates nor clears inactivity.
+    /// </summary>
+    public float GetInactiveSeconds(DateTimeOffset now)
+    {
+        var reference = DeadSince ?? now;
+        return reference <= LastActivityAt ? 0.0f : (float)(reference - LastActivityAt).TotalSeconds;
+    }
+
+    public float GetSpawnAfkSeconds(DateTimeOffset now)
+    {
+        return SpawnedAt is null || now <= SpawnedAt.Value
+            ? 0.0f
+            : (float)(now - SpawnedAt.Value).TotalSeconds;
+    }
+
+    public float GetNoTeamSeconds(DateTimeOffset now)
+    {
+        return NoTeamSince is null || now <= NoTeamSince.Value
+            ? 0.0f
+            : (float)(now - NoTeamSince.Value).TotalSeconds;
+    }
 
     public void RefreshIdentity(int userId, string playerName, DateTimeOffset now)
     {
@@ -53,45 +74,42 @@ public sealed class PlayerAfkState
         HasSample = false;
     }
 
+    /// <summary>
+    /// Starts a new spawn-AFK window. The inactivity clock is deliberately left untouched so a
+    /// player cannot clear accumulated AFK time simply by respawning every round.
+    /// </summary>
     public void MarkSpawned(DateTimeOffset now)
     {
         HasAliveState = true;
         IsAlive = true;
+        ResumeActivityClock(now);
         SpawnedAt = now;
         HasActivitySinceSpawn = false;
+        HasSample = false;
         WasSpawnWarned = false;
-        LastSpawnWarningAt = null;
         LastSpawnWarningRemainingSeconds = 0;
         MovedToSpectatorForSpawn = false;
-        HasSample = false;
-        ResetActivity(now);
     }
 
     public void MarkNotAlive(DateTimeOffset now)
     {
         HasAliveState = true;
         IsAlive = false;
-        SpawnedAt = null;
-        HasActivitySinceSpawn = true;
-        WasSpawnWarned = false;
-        LastSpawnWarningAt = null;
-        LastSpawnWarningRemainingSeconds = 0;
-        MovedToSpectatorForSpawn = false;
-        ResetActivity(now);
+        DeadSince ??= now;
+        ResetSpawnTracking();
     }
 
     public void MarkAliveObserved(DateTimeOffset now)
     {
         HasAliveState = true;
         IsAlive = true;
-        ResetActivity(now);
+        ResumeActivityClock(now);
     }
 
     public void ResetSpawnClock(DateTimeOffset now)
     {
         SpawnedAt = now;
         WasSpawnWarned = false;
-        LastSpawnWarningAt = null;
         LastSpawnWarningRemainingSeconds = 0;
         MovedToSpectatorForSpawn = false;
     }
@@ -112,7 +130,7 @@ public sealed class PlayerAfkState
     public void ResetActivity(DateTimeOffset now)
     {
         LastActivityAt = now;
-        LastWarningAt = null;
+        DeadSince = null;
         LastWarningRemainingSeconds = 0;
         WasWarned = false;
         MovedToSpectatorForAfk = false;
@@ -138,9 +156,35 @@ public sealed class PlayerAfkState
         SpawnedAt = null;
         HasActivitySinceSpawn = true;
         WasSpawnWarned = false;
-        LastSpawnWarningAt = null;
         LastSpawnWarningRemainingSeconds = 0;
         MovedToSpectatorForSpawn = false;
+    }
+
+    /// <summary>
+    /// Rolls the inactivity clock forward by the time spent dead so the paused window is not
+    /// retroactively counted as inactivity once the player is alive (or spectating) again.
+    /// </summary>
+    public void ResumeActivityClock(DateTimeOffset now)
+    {
+        if (DeadSince is null)
+        {
+            return;
+        }
+
+        var pausedFor = now - DeadSince.Value;
+        DeadSince = null;
+
+        if (pausedFor <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        LastActivityAt += pausedFor;
+
+        if (LastActivityAt > now)
+        {
+            LastActivityAt = now;
+        }
     }
 }
 

@@ -4,6 +4,7 @@ using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Admin;
 using CounterStrikeSharp.API.Modules.Utils;
+using CounterStrikeSharp.API.ValveConstants.Protobuf;
 using Microsoft.Extensions.Logging;
 
 namespace AfkManager.Core;
@@ -13,19 +14,17 @@ public sealed class AfkService
     private const string Prefix = "[afkmanager]";
     private const float ViewAngleToleranceDegrees = 3.0f;
     private readonly ILogger _logger;
-    private readonly Action<string> _executeServerCommand;
     private readonly Dictionary<int, PlayerAfkState> _states = [];
     private readonly HashSet<int> _seenSlots = [];
     private readonly List<int> _staleSlots = [];
     private readonly AfkLanguageManager _languageManager;
     private AfkManagerConfig _config;
 
-    public AfkService(AfkManagerConfig config, AfkLanguageManager languageManager, ILogger logger, Action<string> executeServerCommand)
+    public AfkService(AfkManagerConfig config, AfkLanguageManager languageManager, ILogger logger)
     {
         _config = config;
         _languageManager = languageManager;
         _logger = logger;
-        _executeServerCommand = executeServerCommand;
     }
 
     public void UpdateConfig(AfkManagerConfig config)
@@ -43,8 +42,6 @@ public sealed class AfkService
         _states.Remove(slot);
     }
 
-    public IReadOnlyCollection<PlayerAfkState> States => _states.Values;
-
     public void ResetPlayer(CCSPlayerController player)
     {
         var now = DateTimeOffset.UtcNow;
@@ -57,6 +54,12 @@ public sealed class AfkService
         }
     }
 
+    /// <summary>
+    /// Opens a new spawn-AFK window. No view angle sample is taken here on purpose: at spawn time
+    /// the pawn angles may not reflect the spawn point yet, and a stale sample would register as
+    /// movement on the next check and defeat spawn-AFK detection. The first check tick establishes
+    /// the baseline and restarts the spawn clock.
+    /// </summary>
     public void MarkPlayerSpawned(CCSPlayerController player)
     {
         if (!IsValidHumanCandidate(player))
@@ -65,18 +68,12 @@ public sealed class AfkService
         }
 
         var now = DateTimeOffset.UtcNow;
-        var state = GetOrCreateState(player, now);
-        state.MarkSpawned(now);
-
-        if (TryReadViewAngles(player, out var viewAngles))
-        {
-            state.SetSample(viewAngles);
-        }
+        GetOrCreateState(player, now).MarkSpawned(now);
     }
 
     public void MarkPlayerSpawnedIfAlive(CCSPlayerController player)
     {
-        if (!IsValidHumanCandidate(player) || !IsPlayableTeam(GetTeam(player)) || !IsPlayerAlive(player))
+        if (!IsValidHumanCandidate(player) || !IsPlayableTeam(player.Team) || !IsPlayerAlive(player))
         {
             return;
         }
@@ -100,8 +97,7 @@ public sealed class AfkService
         }
 
         var now = DateTimeOffset.UtcNow;
-        var state = GetOrCreateState(player, now);
-        state.MarkNotAlive(now);
+        GetOrCreateState(player, now).MarkNotAlive(now);
     }
 
     public void CheckPlayers()
@@ -132,40 +128,38 @@ public sealed class AfkService
     {
         var now = DateTimeOffset.UtcNow;
         var state = GetOrCreateState(player, now);
-        var team = GetTeam(player);
-        var inactiveSeconds = (int)(now - state.LastActivityAt).TotalSeconds;
-        var noTeamSeconds = state.NoTeamSince is null ? 0 : (int)(now - state.NoTeamSince.Value).TotalSeconds;
-        var spawnSeconds = state.SpawnedAt is null ? 0 : (int)(now - state.SpawnedAt.Value).TotalSeconds;
+        var team = player.Team;
         var status = IsNoTeam(team)
-            ? $"no-team {noTeamSeconds}s"
+            ? $"no-team {(int)state.GetNoTeamSeconds(now)}s"
             : state.SpawnedAt is not null && !state.HasActivitySinceSpawn
-                ? $"spawn-afk {spawnSeconds}s"
-                : $"inactive {inactiveSeconds}s";
+                ? $"spawn-afk {(int)state.GetSpawnAfkSeconds(now)}s"
+                : $"inactive {(int)state.GetInactiveSeconds(now)}s{(state.DeadSince is null ? string.Empty : " (paused, dead)")}";
 
-        return $"#{player.UserId} {player.PlayerName} team={team} {status} warned={state.WasWarned || state.WasSpawnWarned} moved={state.MovedToSpectatorForAfk || state.MovedToSpectatorForSpawn || state.MovedToSpectatorForNoTeam} kick_attempted={state.KickAttempted || state.NoTeamKickAttempted}";
+        return $"#{player.UserId} {ChatText.Sanitize(player.PlayerName)} team={team} {status} "
+            + $"warned={state.WasWarned || state.WasSpawnWarned} "
+            + $"moved={state.MovedToSpectatorForAfk || state.MovedToSpectatorForSpawn || state.MovedToSpectatorForNoTeam} "
+            + $"kick_attempted={state.KickAttempted || state.NoTeamKickAttempted}";
     }
 
-    public IEnumerable<CCSPlayerController> FindPlayers(string target)
+    public List<CCSPlayerController> FindPlayers(string target)
     {
         var query = target.Trim();
         var matches = new List<CCSPlayerController>();
-
-        if (query.StartsWith('#') && int.TryParse(query[1..], out var userId))
-        {
-            foreach (var player in Utilities.GetPlayers())
-            {
-                if (IsValidHumanCandidate(player) && player.UserId == userId)
-                {
-                    matches.Add(player);
-                }
-            }
-
-            return matches;
-        }
+        var userId = 0;
+        var byUserId = query.StartsWith('#') && int.TryParse(query[1..], out userId);
 
         foreach (var player in Utilities.GetPlayers())
         {
-            if (IsValidHumanCandidate(player) && player.PlayerName.Contains(query, StringComparison.OrdinalIgnoreCase))
+            if (!IsValidHumanCandidate(player))
+            {
+                continue;
+            }
+
+            var isMatch = byUserId
+                ? player.UserId == userId
+                : player.PlayerName.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+            if (isMatch)
             {
                 matches.Add(player);
             }
@@ -177,7 +171,7 @@ public sealed class AfkService
     private void CheckPlayer(CCSPlayerController player, DateTimeOffset now)
     {
         var state = GetOrCreateState(player, now);
-        var team = GetTeam(player);
+        var team = player.Team;
 
         if (ShouldSkipForImmunity(player))
         {
@@ -194,6 +188,15 @@ public sealed class AfkService
 
         if (team == CsTeam.Spectator)
         {
+            state.ResetSpawnTracking();
+
+            // Spectators are judged on camera movement, not on respawn state, so the inactivity
+            // clock must not stay paused from the death that put them here.
+            state.ResumeActivityClock(now);
+
+            // Sampled before acting so a spectator who starts moving again clears a pending kick.
+            UpdateActivitySample(player, state, now);
+
             if (HandleSpectatorPlayer(player, state, now))
             {
                 return;
@@ -205,8 +208,6 @@ public sealed class AfkService
                 return;
             }
 
-            state.ResetSpawnTracking();
-            UpdateActivitySample(player, state, now);
             HandleTeamAfk(player, state, now, team);
             return;
         }
@@ -245,7 +246,7 @@ public sealed class AfkService
             return false;
         }
 
-        var spawnAfkSeconds = (float)(now - state.SpawnedAt.Value).TotalSeconds;
+        var spawnAfkSeconds = state.GetSpawnAfkSeconds(now);
 
         if (_config.IsSpawnMoveEnabled
             && !state.MovedToSpectatorForSpawn
@@ -272,7 +273,7 @@ public sealed class AfkService
 
     private void HandleTeamAfk(CCSPlayerController player, PlayerAfkState state, DateTimeOffset now, CsTeam team)
     {
-        var inactiveSeconds = (float)(now - state.LastActivityAt).TotalSeconds;
+        var inactiveSeconds = state.GetInactiveSeconds(now);
 
         if (_config.IsMoveEnabled
             && !state.MovedToSpectatorForAfk
@@ -285,7 +286,7 @@ public sealed class AfkService
 
         if (_config.IsKickEnabled && !state.KickAttempted && inactiveSeconds >= _config.KickTimeSeconds)
         {
-            KickPlayer(player, state, GetLanguage(player).KickReason, AfkWarningKind.Normal);
+            KickPlayer(player, state, AfkWarningKind.Normal);
             return;
         }
 
@@ -320,7 +321,7 @@ public sealed class AfkService
     private void HandleNoTeamPlayer(CCSPlayerController player, PlayerAfkState state, DateTimeOffset now)
     {
         state.NoTeamSince ??= now;
-        var noTeamSeconds = (float)(now - state.NoTeamSince.Value).TotalSeconds;
+        var noTeamSeconds = state.GetNoTeamSeconds(now);
 
         if (_config.IsNoTeamMoveEnabled
             && !state.MovedToSpectatorForNoTeam
@@ -332,8 +333,7 @@ public sealed class AfkService
 
         if (_config.IsNoTeamKickEnabled && !state.NoTeamKickAttempted && noTeamSeconds >= _config.NoTeamKickTimeSeconds)
         {
-            KickPlayer(player, state, GetLanguage(player).NoTeamKickReason, AfkWarningKind.NoTeam);
-            return;
+            KickPlayer(player, state, AfkWarningKind.NoTeam);
         }
     }
 
@@ -341,10 +341,9 @@ public sealed class AfkService
     {
         if (state.MovedToSpectatorForAfk && _config.IsKickEnabled && !state.KickAttempted)
         {
-            var inactiveSeconds = (float)(now - state.LastActivityAt).TotalSeconds;
-            if (inactiveSeconds >= _config.KickTimeSeconds)
+            if (state.GetInactiveSeconds(now) >= _config.KickTimeSeconds)
             {
-                KickPlayer(player, state, GetLanguage(player).KickReason, AfkWarningKind.Normal);
+                KickPlayer(player, state, AfkWarningKind.Normal);
             }
 
             return true;
@@ -352,10 +351,9 @@ public sealed class AfkService
 
         if (state.MovedToSpectatorForNoTeam && _config.IsNoTeamKickEnabled && !state.NoTeamKickAttempted)
         {
-            var noTeamSeconds = state.NoTeamSince is null ? 0.0f : (float)(now - state.NoTeamSince.Value).TotalSeconds;
-            if (noTeamSeconds >= _config.NoTeamKickTimeSeconds)
+            if (state.GetNoTeamSeconds(now) >= _config.NoTeamKickTimeSeconds)
             {
-                KickPlayer(player, state, GetLanguage(player).NoTeamKickReason, AfkWarningKind.NoTeam);
+                KickPlayer(player, state, AfkWarningKind.NoTeam);
             }
 
             return true;
@@ -382,27 +380,36 @@ public sealed class AfkService
             return;
         }
 
-        var looked = viewAngles.DifferenceTo(state.LastViewAngles) > ViewAngleToleranceDegrees;
-
-        if (looked)
+        if (viewAngles.DifferenceTo(state.LastViewAngles) > ViewAngleToleranceDegrees)
         {
             state.MarkActive(now, viewAngles);
         }
     }
 
-    private static bool TryReadViewAngles(
-        CCSPlayerController player,
-        out AngleSample viewAngles)
+    private static bool TryReadViewAngles(CCSPlayerController player, out AngleSample viewAngles)
     {
         viewAngles = default;
 
-        var pawn = player.PlayerPawn.Value;
+        var playerPawn = player.PlayerPawn.Value;
+        if (playerPawn is not null && playerPawn.IsValid)
+        {
+            var eyeAngles = playerPawn.EyeAngles;
+            if (eyeAngles is not null)
+            {
+                viewAngles = AngleSample.FromQAngle(eyeAngles);
+                return true;
+            }
+        }
+
+        // Spectators have no player pawn. v_angle lives on the shared CBasePlayerPawn base and is
+        // populated for the observer pawn, so camera movement is still detected.
+        var pawn = player.Pawn.Value;
         if (pawn is null || !pawn.IsValid)
         {
             return false;
         }
 
-        var angles = pawn.EyeAngles;
+        var angles = pawn.V_angle;
         if (angles is null)
         {
             return false;
@@ -441,13 +448,13 @@ public sealed class AfkService
             return;
         }
 
-        MarkCountdownWarningSent(state, warningKind, displayRemainingSeconds, now);
+        MarkCountdownWarningSent(state, warningKind, displayRemainingSeconds);
         SendWarning(player, warningKind, actionKind, displayRemainingSeconds);
     }
 
     private void SendWarning(CCSPlayerController player, AfkWarningKind warningKind, AfkActionKind actionKind, int remainingSeconds)
     {
-        var language = GetLanguage(player);
+        var language = Language;
         var nextAction = actionKind == AfkActionKind.Kick
             ? language.FormatKickAction(remainingSeconds)
             : language.FormatMoveAction(remainingSeconds);
@@ -472,18 +479,16 @@ public sealed class AfkService
             : state.LastWarningRemainingSeconds == remainingSeconds;
     }
 
-    private static void MarkCountdownWarningSent(PlayerAfkState state, AfkWarningKind kind, int remainingSeconds, DateTimeOffset now)
+    private static void MarkCountdownWarningSent(PlayerAfkState state, AfkWarningKind kind, int remainingSeconds)
     {
         if (kind == AfkWarningKind.Spawn)
         {
             state.WasSpawnWarned = true;
-            state.LastSpawnWarningAt = now;
             state.LastSpawnWarningRemainingSeconds = remainingSeconds;
             return;
         }
 
         state.WasWarned = true;
-        state.LastWarningAt = now;
         state.LastWarningRemainingSeconds = remainingSeconds;
     }
 
@@ -491,7 +496,7 @@ public sealed class AfkService
     {
         try
         {
-            if (GetTeam(player) == CsTeam.Spectator)
+            if (player.Team == CsTeam.Spectator)
             {
                 MarkMoveAttempted(state, kind);
                 return;
@@ -537,6 +542,8 @@ public sealed class AfkService
 
     private void AnnounceMoveToSpectator(string playerName, AfkWarningKind kind)
     {
+        var message = Language.FormatMovedToSpectator(playerName, kind == AfkWarningKind.Spawn);
+
         foreach (var target in Utilities.GetPlayers())
         {
             if (!target.IsValid || target.UserId is null || target.UserId < 0)
@@ -544,22 +551,11 @@ public sealed class AfkService
                 continue;
             }
 
-            try
-            {
-                var language = GetLanguage(target);
-                target.PrintToChat(language.FormatMovedToSpectator(playerName, kind == AfkWarningKind.Spawn));
-            }
-            catch (Exception exception)
-            {
-                if (_config.LogActions)
-                {
-                    _logger.LogDebug(exception, "{Prefix} Failed to send move announcement to {PlayerName}.", Prefix, target.PlayerName);
-                }
-            }
+            TrySendPlayerMessage(target, message);
         }
     }
 
-    private void KickPlayer(CCSPlayerController player, PlayerAfkState state, string reason, AfkWarningKind kind)
+    private void KickPlayer(CCSPlayerController player, PlayerAfkState state, AfkWarningKind kind)
     {
         if (kind == AfkWarningKind.NoTeam)
         {
@@ -570,18 +566,26 @@ public sealed class AfkService
             state.KickAttempted = true;
         }
 
-        var userId = player.UserId;
-        if (userId is null || userId < 0)
+        var language = Language;
+        var reason = kind == AfkWarningKind.NoTeam ? language.NoTeamKickReason : language.KickReason;
+        TrySendPlayerMessage(player, language.FormatKickNotice(reason));
+
+        try
         {
+            // Typed disconnect instead of building a "kickid <id> <reason>" console string: the
+            // Source console tokenizer does not honour backslash escaping, so no amount of quoting
+            // makes an arbitrary reason string safe to concatenate into a command.
+            player.Disconnect(NetworkDisconnectionReason.NETWORK_DISCONNECT_KICKED_IDLE);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "{Prefix} Failed to kick {PlayerName} (#{UserId}).", Prefix, player.PlayerName, player.UserId);
             return;
         }
 
-        var safeReason = EscapeCommandArgument(reason);
-        _executeServerCommand($"kickid {userId} \"{safeReason}\"");
-
         if (_config.LogActions)
         {
-            _logger.LogInformation("{Prefix} Kicked {PlayerName} (#{UserId}) for {Reason}.", Prefix, player.PlayerName, player.UserId, GetLogReason(kind));
+            _logger.LogInformation("{Prefix} Kicked {PlayerName} (#{UserId}) for {Reason} ({KickReason}).", Prefix, player.PlayerName, player.UserId, GetLogReason(kind), reason);
         }
     }
 
@@ -596,11 +600,6 @@ public sealed class AfkService
 
         state.RefreshIdentity(player.UserId ?? -1, player.PlayerName, now);
         return state;
-    }
-
-    private static CsTeam GetTeam(CCSPlayerController player)
-    {
-        return player.Team;
     }
 
     private static bool IsNoTeam(CsTeam team)
@@ -621,6 +620,8 @@ public sealed class AfkService
         }
         catch
         {
+            // Reading through a pawn handle that the engine has already torn down. Treat as dead;
+            // this runs for every player on every check tick, so it must not log.
             return false;
         }
     }
@@ -652,8 +653,10 @@ public sealed class AfkService
         {
             return AdminManager.PlayerHasPermissions(player, _config.AdminImmunityFlagsArray);
         }
-        catch
+        catch (Exception exception)
         {
+            // Fail towards "not immune" so a broken admin config cannot silently disable AFK checks.
+            _logger.LogDebug(exception, "{Prefix} Admin immunity check failed for {PlayerName}.", Prefix, player.PlayerName);
             return false;
         }
     }
@@ -668,7 +671,7 @@ public sealed class AfkService
         {
             if (_config.LogActions)
             {
-                _logger.LogDebug(exception, "{Prefix} Failed to send chat warning to {PlayerName}.", Prefix, player.PlayerName);
+                _logger.LogDebug(exception, "{Prefix} Failed to send chat message to {PlayerName}.", Prefix, player.PlayerName);
             }
         }
     }
@@ -691,11 +694,6 @@ public sealed class AfkService
         }
     }
 
-    private static string EscapeCommandArgument(string value)
-    {
-        return value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
-    }
-
     private static string GetLogReason(AfkWarningKind kind)
     {
         return kind switch
@@ -706,10 +704,7 @@ public sealed class AfkService
         };
     }
 
-    private AfkLanguage GetLanguage(CCSPlayerController player)
-    {
-        return _languageManager.LoadCounterStrikeSharpLanguage();
-    }
+    private AfkLanguage Language => _languageManager.LoadCounterStrikeSharpLanguage();
 }
 
 public enum AfkWarningKind
