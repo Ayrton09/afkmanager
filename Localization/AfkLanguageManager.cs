@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using CounterStrikeSharp.API.Core;
 using Microsoft.Extensions.Logging;
 
 namespace AfkManager.Localization;
@@ -15,26 +16,24 @@ public sealed class AfkLanguageManager
         AllowTrailingCommas = true
     };
 
-    private readonly string _pluginDirectory;
+    private readonly string _languageDirectory;
     private readonly ILogger _logger;
     private readonly Dictionary<string, AfkLanguage> _cache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, AfkLanguage> _resolvedCache = new(StringComparer.OrdinalIgnoreCase);
+    private AfkLanguage? _serverLanguage;
 
     public AfkLanguageManager(string pluginDirectory, ILogger logger)
     {
-        _pluginDirectory = pluginDirectory;
+        _languageDirectory = Path.Combine(pluginDirectory, "Lang");
         _logger = logger;
     }
 
-    public AfkLanguage Load(string language)
-    {
-        var normalizedLanguage = NormalizeLanguage(language, BuiltInFallbackLanguage);
-        return LoadWithFallback(normalizedLanguage, BuiltInFallbackLanguage, logMissing: true);
-    }
-
+    /// <summary>
+    /// Resolves the server language once and then serves it from a field. Warning messages are
+    /// formatted per player per check tick, so this must not re-resolve on every call.
+    /// </summary>
     public AfkLanguage LoadCounterStrikeSharpLanguage()
     {
-        return LoadWithFallback(GetCounterStrikeSharpLanguage(), BuiltInFallbackLanguage, logMissing: false);
+        return _serverLanguage ??= Resolve(GetCounterStrikeSharpLanguage());
     }
 
     public string GetCounterStrikeSharpLanguageName()
@@ -45,62 +44,54 @@ public sealed class AfkLanguageManager
     public void ClearCache()
     {
         _cache.Clear();
-        _resolvedCache.Clear();
+        _serverLanguage = null;
     }
 
-    private AfkLanguage LoadWithFallback(string language, string fallbackLanguage, bool logMissing)
+    private AfkLanguage Resolve(string language)
     {
-        var resolvedKey = $"{language}|{fallbackLanguage}";
-        if (_resolvedCache.TryGetValue(resolvedKey, out var cachedResolved))
+        if (TryLoad(language, out var loaded))
         {
-            return cachedResolved;
-        }
-
-        if (TryLoad(language, logMissing, out var loaded))
-        {
-            _resolvedCache[resolvedKey] = loaded;
             return loaded;
         }
 
         var neutralLanguage = GetNeutralLanguage(language);
         if (!string.Equals(neutralLanguage, language, StringComparison.OrdinalIgnoreCase)
-            && TryLoad(neutralLanguage, logMissing, out loaded))
+            && TryLoad(neutralLanguage, out loaded))
         {
-            _resolvedCache[resolvedKey] = loaded;
+            _logger.LogInformation(
+                "{Prefix} No language file for \"{Language}\", using \"{Neutral}\" instead.",
+                Prefix, language, neutralLanguage);
             return loaded;
         }
 
-        var normalizedFallback = NormalizeLanguage(fallbackLanguage, BuiltInFallbackLanguage);
-        if (!string.Equals(normalizedFallback, language, StringComparison.OrdinalIgnoreCase)
-            && TryLoad(normalizedFallback, logMissing, out loaded))
+        if (!string.Equals(BuiltInFallbackLanguage, language, StringComparison.OrdinalIgnoreCase)
+            && TryLoad(BuiltInFallbackLanguage, out loaded))
         {
-            _resolvedCache[resolvedKey] = loaded;
+            _logger.LogWarning(
+                "{Prefix} No language file for \"{Language}\" in {Directory}, falling back to \"{Fallback}\".",
+                Prefix, language, _languageDirectory, BuiltInFallbackLanguage);
             return loaded;
         }
 
-        loaded = new AfkLanguage();
-        _resolvedCache[resolvedKey] = loaded;
-        return loaded;
+        _logger.LogWarning(
+            "{Prefix} No usable language file found in {Directory}, using built-in English defaults.",
+            Prefix, _languageDirectory);
+        return new AfkLanguage();
     }
 
-    private bool TryLoad(string language, bool logMissing, out AfkLanguage loaded)
+    private bool TryLoad(string language, out AfkLanguage loaded)
     {
-        loaded = new AfkLanguage();
-
         if (_cache.TryGetValue(language, out var cached))
         {
             loaded = cached;
             return true;
         }
 
-        var languagePath = Path.Combine(_pluginDirectory, "Lang", $"{language}.json");
+        loaded = new AfkLanguage();
+        var languagePath = Path.Combine(_languageDirectory, $"{language}.json");
+
         if (!File.Exists(languagePath))
         {
-            if (logMissing)
-            {
-                _logger.LogWarning("{Prefix} Language file not found: {Path}.", Prefix, languagePath);
-            }
-
             return false;
         }
 
@@ -123,8 +114,18 @@ public sealed class AfkLanguageManager
         return string.IsNullOrWhiteSpace(language) ? fallback : language.Trim().ToLowerInvariant();
     }
 
+    /// <summary>
+    /// Prefers the CounterStrikeSharp core config value directly. CounterStrikeSharp also applies
+    /// it to the process culture, which is used as a fallback if the value is unavailable.
+    /// </summary>
     private static string GetCounterStrikeSharpLanguage()
     {
+        var configured = CoreConfig.ServerLanguage;
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return NormalizeLanguage(configured, BuiltInFallbackLanguage);
+        }
+
         var culture = CultureInfo.DefaultThreadCurrentUICulture ?? CultureInfo.CurrentUICulture;
         return NormalizeLanguage(culture.Name, BuiltInFallbackLanguage);
     }
