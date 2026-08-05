@@ -1,19 +1,21 @@
+using System.Text;
+
 namespace AfkManager.Localization;
 
 internal static class ChatText
 {
-    private const string EmptyPlaceholder = "?";
+    private const string NamePlaceholder = "?";
 
     /// <summary>
     /// Removes control characters from text that is echoed back to players.
-    /// CS2 chat colours are control bytes (0x01-0x10), so an unsanitised player name can be used
-    /// to recolour or fake plugin/admin messages in the announcement it appears in.
+    /// CS2 chat colours are control bytes (0x01-0x10), so unsanitised text can be used to recolour
+    /// or fake plugin and admin messages in whatever line it appears in.
     /// </summary>
     internal static string Sanitize(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        if (string.IsNullOrEmpty(value))
         {
-            return EmptyPlaceholder;
+            return string.Empty;
         }
 
         var needsSanitizing = false;
@@ -31,7 +33,7 @@ internal static class ChatText
             return value;
         }
 
-        var builder = new System.Text.StringBuilder(value.Length);
+        var builder = new StringBuilder(value.Length);
         foreach (var character in value)
         {
             if (!char.IsControl(character))
@@ -40,7 +42,16 @@ internal static class ChatText
             }
         }
 
-        var sanitized = builder.ToString().Trim();
-        return sanitized.Length == 0 ? EmptyPlaceholder : sanitized;
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Sanitises a player name, substituting a placeholder if nothing printable is left. An empty
+    /// result would otherwise let a name made entirely of control characters render as no name.
+    /// </summary>
+    internal static string SanitizeName(string? playerName)
+    {
+        var sanitized = Sanitize(playerName).Trim();
+        return sanitized.Length == 0 ? NamePlaceholder : sanitized;
     }
 }

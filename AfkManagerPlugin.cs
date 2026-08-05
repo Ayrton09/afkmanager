@@ -9,6 +9,7 @@ using CounterStrikeSharp.API.Modules.Admin;
 using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Extensions;
 using CounterStrikeSharp.API.Modules.Timers;
+using CounterStrikeSharp.API.Modules.Utils;
 using Microsoft.Extensions.Logging;
 
 namespace AfkManager;
@@ -105,6 +106,21 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
         if (player is null || !player.IsValid)
         {
             return HookResult.Continue;
+        }
+
+        var newTeam = (CsTeam)@event.Team;
+        var oldTeam = (CsTeam)@event.Oldteam;
+
+        // Coming off the sideline onto a playable team is a deliberate action, so it clears
+        // accumulated inactivity. Restricted to None/Spectator as the old team on purpose: the
+        // plugin only ever moves players to spectator, and T<->CT swaps are usually the server
+        // auto-balancing, neither of which is evidence the player is at the keyboard.
+        var joinedFromSideline = (oldTeam == CsTeam.None || oldTeam == CsTeam.Spectator)
+            && (newTeam == CsTeam.Terrorist || newTeam == CsTeam.CounterTerrorist);
+
+        if (joinedFromSideline)
+        {
+            _service?.MarkPlayerReturnedToTeam(player);
         }
 
         // The controller must not be captured by the timer: if the player disconnects within the
@@ -264,7 +280,7 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
         foreach (var target in targets)
         {
             service.ResetPlayer(target);
-            command.ReplyToCommand($"{Prefix} Reset AFK timer for {ChatText.Sanitize(target.PlayerName)}.");
+            command.ReplyToCommand($"{Prefix} Reset AFK timer for {ChatText.SanitizeName(target.PlayerName)}.");
         }
     }
 

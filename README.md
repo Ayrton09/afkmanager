@@ -6,7 +6,8 @@
 - The inactivity clock is **paused** while a player is dead, and resumes where it left off once they respawn. Waiting to respawn therefore neither accumulates AFK time nor clears it, so a player cannot reset their AFK timer just by dying every round.
 - Spawn AFK tracking restarts on player spawn, on team change once the player is alive on T/CT, and at round freeze end for alive T/CT players. This window is separate from the inactivity clock above.
 - The view angle baseline is taken on the first check after spawning rather than at the spawn event itself, because pawn angles at spawn time may not reflect the spawn point yet.
-- Spectators are tracked through their observer pawn, so camera movement counts as activity. If the plugin moved someone to spectator, moving the camera again cancels a pending kick.
+- Spectators are tracked through their observer pawn, so camera movement counts as activity. If the plugin moved someone to spectator, moving the camera again cancels a pending kick. Switching between the player pawn and the observer pawn re-establishes the angle baseline instead of counting as movement.
+- Joining a playable team from spectator or team selection clears accumulated inactivity, since it takes deliberate input. T/CT swaps do not, because those are usually the server auto-balancing.
 - Spectators are ignored by default with `ignore_spectators`. This does not ignore players who are still in team selection.
 - Players with no selected team are tracked separately by time spent in the no-team/team-selection state. They are not treated as spectators and are not exempted by `ignore_spectators`.
 - Admins matching `admin_immunity_flags` are skipped when `admin_immunity` is enabled. If the admin lookup fails, the player is treated as **not** immune so a broken admin config cannot silently disable AFK checks.

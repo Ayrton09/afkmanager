@@ -84,14 +84,14 @@ public sealed class AfkLanguage
             return _formattedPrefix;
         }
 
-        var cleanPrefix = ChatText.Sanitize(Prefix);
+        var cleanPrefix = ChatText.Sanitize(Prefix).Trim();
         _formattedPrefix = $" {ChatColors.LightPurple}{cleanPrefix}{ChatColors.Default}";
         return _formattedPrefix;
     }
 
     private static string FormatPlayerName(string playerName)
     {
-        return $"{ChatColors.Green}{ChatText.Sanitize(playerName)}{ChatColors.Default}";
+        return $"{ChatColors.Green}{ChatText.SanitizeName(playerName)}{ChatColors.Default}";
     }
 
     private static string ReplaceSeconds(string value, int seconds)

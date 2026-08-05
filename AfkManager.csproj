@@ -13,9 +13,9 @@
 
   <ItemGroup>
     <!-- The test project lives under Tests/ and must not be compiled into the plugin. -->
-    <Compile Remove="Tests\**" />
-    <None Remove="Tests\**" />
-    <EmbeddedResource Remove="Tests\**" />
+    <Compile Remove="Tests/**" />
+    <None Remove="Tests/**" />
+    <EmbeddedResource Remove="Tests/**" />
   </ItemGroup>
 
   <ItemGroup>

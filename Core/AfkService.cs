@@ -48,10 +48,26 @@ public sealed class AfkService
         var state = GetOrCreateState(player, now);
         state.ResetAllTracking(now);
 
-        if (TryReadViewAngles(player, out var viewAngles))
+        if (TryReadViewAngles(player, out var viewAngles, out var fromObserverPawn))
         {
-            state.SetSample(viewAngles);
+            state.SetSample(viewAngles, fromObserverPawn);
         }
+    }
+
+    /// <summary>
+    /// Joining a playable team is a deliberate action, so it clears accumulated inactivity. The
+    /// plugin only ever moves players to spectator and never onto T/CT, so this cannot be
+    /// triggered by its own enforcement and cancel a pending kick.
+    /// </summary>
+    public void MarkPlayerReturnedToTeam(CCSPlayerController player)
+    {
+        if (!IsValidHumanCandidate(player))
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        GetOrCreateState(player, now).ResetActivity(now);
     }
 
     /// <summary>
@@ -135,7 +151,7 @@ public sealed class AfkService
                 ? $"spawn-afk {(int)state.GetSpawnAfkSeconds(now)}s"
                 : $"inactive {(int)state.GetInactiveSeconds(now)}s{(state.DeadSince is null ? string.Empty : " (paused, dead)")}";
 
-        return $"#{player.UserId} {ChatText.Sanitize(player.PlayerName)} team={team} {status} "
+        return $"#{player.UserId} {ChatText.SanitizeName(player.PlayerName)} team={team} {status} "
             + $"warned={state.WasWarned || state.WasSpawnWarned} "
             + $"moved={state.MovedToSpectatorForAfk || state.MovedToSpectatorForSpawn || state.MovedToSpectatorForNoTeam} "
             + $"kick_attempted={state.KickAttempted || state.NoTeamKickAttempted}";
@@ -364,14 +380,18 @@ public sealed class AfkService
 
     private void UpdateActivitySample(CCSPlayerController player, PlayerAfkState state, DateTimeOffset now)
     {
-        if (!TryReadViewAngles(player, out var viewAngles))
+        if (!TryReadViewAngles(player, out var viewAngles, out var fromObserverPawn))
         {
             return;
         }
 
-        if (!state.HasSample)
+        // A source change (player pawn <-> observer pawn) yields angles that are not comparable to
+        // the previous sample, so re-baseline instead of reading the switch itself as movement.
+        // Without this, being moved to spectator would immediately look like activity and clear the
+        // enforcement flags that a follow-up kick depends on.
+        if (!state.HasSample || state.SampleFromObserverPawn != fromObserverPawn)
         {
-            state.SetSample(viewAngles);
+            state.SetSample(viewAngles, fromObserverPawn);
             if (state.SpawnedAt is not null && !state.HasActivitySinceSpawn)
             {
                 state.ResetSpawnClock(now);
@@ -382,13 +402,14 @@ public sealed class AfkService
 
         if (viewAngles.DifferenceTo(state.LastViewAngles) > ViewAngleToleranceDegrees)
         {
-            state.MarkActive(now, viewAngles);
+            state.MarkActive(now, viewAngles, fromObserverPawn);
         }
     }
 
-    private static bool TryReadViewAngles(CCSPlayerController player, out AngleSample viewAngles)
+    private static bool TryReadViewAngles(CCSPlayerController player, out AngleSample viewAngles, out bool fromObserverPawn)
     {
         viewAngles = default;
+        fromObserverPawn = false;
 
         var playerPawn = player.PlayerPawn.Value;
         if (playerPawn is not null && playerPawn.IsValid)
@@ -416,6 +437,7 @@ public sealed class AfkService
         }
 
         viewAngles = AngleSample.FromQAngle(angles);
+        fromObserverPawn = true;
         return true;
     }
 

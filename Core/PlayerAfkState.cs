@@ -35,6 +35,12 @@ public sealed class PlayerAfkState
     public AngleSample LastViewAngles { get; private set; }
 
     /// <summary>
+    /// Which pawn the last sample came from. Player pawn and observer pawn angles are not
+    /// comparable, so a source change must re-baseline rather than read as movement.
+    /// </summary>
+    public bool SampleFromObserverPawn { get; private set; }
+
+    /// <summary>
     /// Seconds since the player last moved their view. The clock is paused while the player is
     /// dead so that waiting to respawn neither accumulates nor clears inactivity.
     /// </summary>
@@ -114,15 +120,16 @@ public sealed class PlayerAfkState
         MovedToSpectatorForSpawn = false;
     }
 
-    public void SetSample(AngleSample viewAngles)
+    public void SetSample(AngleSample viewAngles, bool fromObserverPawn)
     {
         LastViewAngles = viewAngles;
+        SampleFromObserverPawn = fromObserverPawn;
         HasSample = true;
     }
 
-    public void MarkActive(DateTimeOffset now, AngleSample viewAngles)
+    public void MarkActive(DateTimeOffset now, AngleSample viewAngles, bool fromObserverPawn)
     {
-        SetSample(viewAngles);
+        SetSample(viewAngles, fromObserverPawn);
         HasActivitySinceSpawn = true;
         ResetActivity(now);
     }
