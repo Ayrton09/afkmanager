@@ -23,7 +23,7 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
     private CounterStrikeSharp.API.Modules.Timers.Timer? _checkTimer;
 
     public override string ModuleName => "afkmanager";
-    public override string ModuleVersion => "1.1.0";
+    public override string ModuleVersion => "1.2.0";
     public override string ModuleAuthor => "Ayrton09";
     public override string ModuleDescription => "Warns, moves to spectator, and kicks AFK players.";
 
@@ -252,35 +252,6 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
         foreach (var target in players)
         {
             command.ReplyToCommand($"{Prefix} {service.DescribePlayer(target)}");
-        }
-    }
-
-    [ConsoleCommand("css_afk_reset", "Resets AFK tracking for yourself or a target name/#userid.")]
-    [CommandHelper(minArgs: 0, usage: "[target]", whoCanExecute: CommandUsage.CLIENT_AND_SERVER)]
-    [RequiresPermissions("@css/kick")]
-    public void OnResetCommand(CCSPlayerController? player, CommandInfo command)
-    {
-        var service = _service;
-        if (service is null)
-        {
-            command.ReplyToCommand($"{Prefix} Plugin is not loaded.");
-            return;
-        }
-
-        var targets = command.ArgCount >= 2
-            ? service.FindPlayers(command.GetArg(1))
-            : player is null ? [] : new List<CCSPlayerController> { player };
-
-        if (targets.Count == 0)
-        {
-            command.ReplyToCommand($"{Prefix} No target found. Use a player name or #userid from server console.");
-            return;
-        }
-
-        foreach (var target in targets)
-        {
-            service.ResetPlayer(target);
-            command.ReplyToCommand($"{Prefix} Reset AFK timer for {ChatText.SanitizeName(target.PlayerName)}.");
         }
     }
 

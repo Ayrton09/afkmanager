@@ -42,18 +42,6 @@ public sealed class AfkService
         _states.Remove(slot);
     }
 
-    public void ResetPlayer(CCSPlayerController player)
-    {
-        var now = DateTimeOffset.UtcNow;
-        var state = GetOrCreateState(player, now);
-        state.ResetAllTracking(now);
-
-        if (TryReadViewAngles(player, out var viewAngles, out var fromObserverPawn))
-        {
-            state.SetSample(viewAngles, fromObserverPawn);
-        }
-    }
-
     /// <summary>
     /// Joining a playable team is a deliberate action, so it clears accumulated inactivity. The
     /// plugin only ever moves players to spectator and never onto T/CT, so this cannot be

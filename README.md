@@ -124,10 +124,8 @@ game/csgo/addons/counterstrikesharp/configs/plugins/afkmanager/afkmanager.json
 - `css_afk_enabled <0|1>`: disable or enable AFK Manager until config reload/map/plugin reload. Requires `@css/config`.
 - `css_afk_status`: print status for all players. Requires `@css/generic`.
 - `css_afk_status <name|#userid>`: print status for matching players.
-- `css_afk_reset`: reset your AFK timer. Requires `@css/kick`.
-- `css_afk_reset <name|#userid>`: reset a target timer.
 
-`css_afk_reset` clears AFK enforcement for its target, so it is gated behind `@css/kick` rather than `@css/generic` to keep it from being used as a self-exemption bind.
+To exempt specific players from AFK checks entirely, use `admin_immunity` and `admin_immunity_flags` in the config rather than clearing their timer by hand.
 
 ## Tests
 
@@ -147,7 +145,7 @@ dotnet run --project Tests
 
 ## Upgrading from 1.0.x
 
-- `css_afk_reset` now requires `@css/kick` instead of `@css/generic`.
+- `css_afk_reset` was removed. It cleared all AFK enforcement for a player, which made it usable as a self-exemption bind, and `admin_immunity` covers the legitimate case properly.
 - The unused `action_moved_soon`, `action_kicked_soon`, and `action_punished_soon` keys were removed from the language files. Leaving them in a custom language file is harmless; they are ignored.
 - The plugin config schema is unchanged, so existing `afkmanager.json` files keep working.
 - `move_to_spectator_time_seconds` and `kick_time_seconds` now actually accumulate across rounds. If you previously set them low because they never seemed to fire, re-check those values before deploying.
