@@ -22,15 +22,6 @@ public sealed class AfkLanguage
     [JsonPropertyName("action_kick_seconds")]
     public string ActionKickSeconds { get; set; } = "kicked in {seconds} seconds";
 
-    [JsonPropertyName("action_moved_soon")]
-    public string ActionMovedSoon { get; set; } = "moved to spectator soon";
-
-    [JsonPropertyName("action_kicked_soon")]
-    public string ActionKickedSoon { get; set; } = "kicked soon";
-
-    [JsonPropertyName("action_punished_soon")]
-    public string ActionPunishedSoon { get; set; } = "punished soon";
-
     [JsonPropertyName("kick_reason")]
     public string KickReason { get; set; } = "Kicked for being AFK";
 
@@ -70,6 +61,11 @@ public sealed class AfkLanguage
             .Replace("{player}", FormatPlayerName(playerName), StringComparison.Ordinal);
     }
 
+    public string FormatKickNotice(string reason)
+    {
+        return $"{FormatPrefix()} {reason}";
+    }
+
     private string ReplaceCommon(string value, string action)
     {
         return ReplacePrefix(value)
@@ -88,14 +84,14 @@ public sealed class AfkLanguage
             return _formattedPrefix;
         }
 
-        var cleanPrefix = Prefix.Trim();
+        var cleanPrefix = ChatText.Sanitize(Prefix);
         _formattedPrefix = $" {ChatColors.LightPurple}{cleanPrefix}{ChatColors.Default}";
         return _formattedPrefix;
     }
 
     private static string FormatPlayerName(string playerName)
     {
-        return $"{ChatColors.Green}{playerName}{ChatColors.Default}";
+        return $"{ChatColors.Green}{ChatText.Sanitize(playerName)}{ChatColors.Default}";
     }
 
     private static string ReplaceSeconds(string value, int seconds)
@@ -107,5 +103,4 @@ public sealed class AfkLanguage
     {
         return $"{ChatColors.Yellow}{seconds}{ChatColors.Default}";
     }
-
 }
