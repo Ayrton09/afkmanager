@@ -21,7 +21,7 @@ internal static class ChatText
         var needsSanitizing = false;
         foreach (var character in value)
         {
-            if (char.IsControl(character))
+            if (IsStripped(character))
             {
                 needsSanitizing = true;
                 break;
@@ -36,13 +36,22 @@ internal static class ChatText
         var builder = new StringBuilder(value.Length);
         foreach (var character in value)
         {
-            if (!char.IsControl(character))
+            if (!IsStripped(character))
             {
                 builder.Append(character);
             }
         }
 
         return builder.ToString();
+    }
+
+    // Control characters (chat colours are 0x01-0x10) and the bidi embedding, override and
+    // isolate characters, which can reverse the rest of the line a name is printed in.
+    private static bool IsStripped(char character)
+    {
+        return char.IsControl(character)
+            || character is >= '\u202A' and <= '\u202E'
+            || character is >= '\u2066' and <= '\u2069';
     }
 
     /// <summary>

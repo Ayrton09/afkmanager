@@ -5,21 +5,14 @@
     <Nullable>enable</Nullable>
     <AssemblyName>afkmanager</AssemblyName>
     <RootNamespace>AfkManager</RootNamespace>
-    <Version>1.1.1</Version>
-    <AssemblyVersion>1.1.1.0</AssemblyVersion>
-    <FileVersion>1.1.1.0</FileVersion>
+    <Version>1.2.0</Version>
+    <AssemblyVersion>1.2.0.0</AssemblyVersion>
+    <FileVersion>1.2.0.0</FileVersion>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- The test project lives under Tests/ and must not be compiled into the plugin. -->
-    <Compile Remove="Tests/**" />
-    <None Remove="Tests/**" />
-    <EmbeddedResource Remove="Tests/**" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="CounterStrikeSharp.API" Version="1.0.371" />
+    <PackageReference Include="CounterStrikeSharp.API" Version="1.0.380" />
   </ItemGroup>
 
   <ItemGroup>

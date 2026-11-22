@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using AfkManager.Config;
 using AfkManager.Localization;
 using CounterStrikeSharp.API;
@@ -19,6 +20,16 @@ public sealed class AfkService
     private readonly List<int> _staleSlots = [];
     private readonly AfkLanguageManager _languageManager;
     private AfkManagerConfig _config;
+    private CCSGameRulesProxy? _gameRulesProxy;
+
+    // AFK clock. It only advances while the round is live, so freeze time (which is also where
+    // match pauses and timeouts take effect) never counts as inactivity. Each step is attributed
+    // to the state seen at the previous reading, so the freeze is not counted as live time just
+    // because it already ended when the next reading happens. Steps are measured with a
+    // monotonic timer so a host clock change cannot jump everyone's AFK time.
+    private DateTimeOffset _clock = DateTimeOffset.UtcNow;
+    private long _lastTimestamp = Stopwatch.GetTimestamp();
+    private bool _clockStopped;
 
     public AfkService(AfkManagerConfig config, AfkLanguageManager languageManager, ILogger logger)
     {
@@ -35,6 +46,16 @@ public sealed class AfkService
     public void Clear()
     {
         _states.Clear();
+        _gameRulesProxy = null;
+    }
+
+    /// <summary>
+    /// Takes a clock reading so the stopped/running state is picked up at the exact moment it
+    /// changes (round start), instead of at the next check tick.
+    /// </summary>
+    public void SyncClock()
+    {
+        Now();
     }
 
     public void RemovePlayer(int slot)
@@ -49,12 +70,12 @@ public sealed class AfkService
     /// </summary>
     public void MarkPlayerReturnedToTeam(CCSPlayerController player)
     {
-        if (!IsValidHumanCandidate(player))
+        if (!_config.Enabled || !IsValidHumanCandidate(player))
         {
             return;
         }
 
-        var now = DateTimeOffset.UtcNow;
+        var now = Now();
         GetOrCreateState(player, now).ResetActivity(now);
     }
 
@@ -66,12 +87,12 @@ public sealed class AfkService
     /// </summary>
     public void MarkPlayerSpawned(CCSPlayerController player)
     {
-        if (!IsValidHumanCandidate(player))
+        if (!_config.Enabled || !IsValidHumanCandidate(player))
         {
             return;
         }
 
-        var now = DateTimeOffset.UtcNow;
+        var now = Now();
         GetOrCreateState(player, now).MarkSpawned(now);
     }
 
@@ -95,12 +116,12 @@ public sealed class AfkService
 
     public void MarkPlayerNotAlive(CCSPlayerController player)
     {
-        if (!IsValidHumanCandidate(player))
+        if (!_config.Enabled || !IsValidHumanCandidate(player))
         {
             return;
         }
 
-        var now = DateTimeOffset.UtcNow;
+        var now = Now();
         GetOrCreateState(player, now).MarkNotAlive(now);
     }
 
@@ -111,7 +132,7 @@ public sealed class AfkService
             return;
         }
 
-        var now = DateTimeOffset.UtcNow;
+        var now = Now();
         _seenSlots.Clear();
 
         foreach (var player in Utilities.GetPlayers())
@@ -122,7 +143,16 @@ public sealed class AfkService
             }
 
             _seenSlots.Add(player.Slot);
-            CheckPlayer(player, now);
+
+            // One failing player must not stop the checks for everyone after it.
+            try
+            {
+                CheckPlayer(player, now);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(exception, "{Prefix} AFK check failed for {PlayerName}.", Prefix, ChatText.SanitizeName(player.PlayerName));
+            }
         }
 
         RemoveStaleStates();
@@ -130,9 +160,13 @@ public sealed class AfkService
 
     public string DescribePlayer(CCSPlayerController player)
     {
-        var now = DateTimeOffset.UtcNow;
-        var state = GetOrCreateState(player, now);
         var team = player.Team;
+        if (!_states.TryGetValue(player.Slot, out var state) || state.UserId != (player.UserId ?? -1))
+        {
+            return $"#{player.UserId} {ChatText.SanitizeName(player.PlayerName)} team={team} not tracked";
+        }
+
+        var now = Now();
         var status = IsNoTeam(team)
             ? $"no-team {(int)state.GetNoTeamSeconds(now)}s"
             : state.SpawnedAt is not null && !state.HasActivitySinceSpawn
@@ -145,9 +179,9 @@ public sealed class AfkService
             + $"kick_attempted={state.KickAttempted || state.NoTeamKickAttempted}";
     }
 
-    public List<CCSPlayerController> FindPlayers(string target)
+    public List<CCSPlayerController> FindPlayers(string? target)
     {
-        var query = target.Trim();
+        var query = target?.Trim() ?? string.Empty;
         var matches = new List<CCSPlayerController>();
         var userId = 0;
         var byUserId = query.StartsWith('#') && int.TryParse(query[1..], out userId);
@@ -517,7 +551,7 @@ public sealed class AfkService
 
             if (_config.LogActions)
             {
-                _logger.LogInformation("{Prefix} Moved {PlayerName} (#{UserId}) to spectator for {Reason}.", Prefix, player.PlayerName, player.UserId, GetLogReason(kind));
+                _logger.LogInformation("{Prefix} Moved {PlayerName} (#{UserId}) to spectator for {Reason}.", Prefix, ChatText.SanitizeName(player.PlayerName), player.UserId, GetLogReason(kind));
             }
 
             if (kind != AfkWarningKind.NoTeam)
@@ -529,7 +563,7 @@ public sealed class AfkService
         {
             if (_config.LogActions)
             {
-                _logger.LogWarning(exception, "{Prefix} Failed to move {PlayerName} (#{UserId}) to spectator.", Prefix, player.PlayerName, player.UserId);
+                _logger.LogWarning(exception, "{Prefix} Failed to move {PlayerName} (#{UserId}) to spectator.", Prefix, ChatText.SanitizeName(player.PlayerName), player.UserId);
             }
         }
     }
@@ -578,6 +612,8 @@ public sealed class AfkService
 
         var language = Language;
         var reason = kind == AfkWarningKind.NoTeam ? language.NoTeamKickReason : language.KickReason;
+        var playerName = ChatText.SanitizeName(player.PlayerName);
+        var userId = player.UserId;
         TrySendPlayerMessage(player, language.FormatKickNotice(reason));
 
         try
@@ -589,13 +625,49 @@ public sealed class AfkService
         }
         catch (Exception exception)
         {
-            _logger.LogWarning(exception, "{Prefix} Failed to kick {PlayerName} (#{UserId}).", Prefix, player.PlayerName, player.UserId);
+            _logger.LogWarning(exception, "{Prefix} Failed to kick {PlayerName} (#{UserId}).", Prefix, playerName, userId);
             return;
         }
 
         if (_config.LogActions)
         {
-            _logger.LogInformation("{Prefix} Kicked {PlayerName} (#{UserId}) for {Reason} ({KickReason}).", Prefix, player.PlayerName, player.UserId, GetLogReason(kind), reason);
+            _logger.LogInformation("{Prefix} Kicked {PlayerName} (#{UserId}) for {Reason} ({KickReason}).", Prefix, playerName, userId, GetLogReason(kind), reason);
+        }
+    }
+
+    private DateTimeOffset Now()
+    {
+        var timestamp = Stopwatch.GetTimestamp();
+        if (!_clockStopped)
+        {
+            _clock += Stopwatch.GetElapsedTime(_lastTimestamp, timestamp);
+        }
+
+        _lastTimestamp = timestamp;
+        _clockStopped = IsRoundStopped();
+        return _clock;
+    }
+
+    private bool IsRoundStopped()
+    {
+        try
+        {
+            if (_gameRulesProxy is null || !_gameRulesProxy.IsValid)
+            {
+                _gameRulesProxy = Utilities.FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules").FirstOrDefault();
+            }
+
+            // GamePaused is the engine pause. The match pause and timeout flags are not read:
+            // they are set as soon as one is called, mid-round, while the pause itself only
+            // starts at the next freeze time, which FreezePeriod already covers.
+            var rules = _gameRulesProxy?.GameRules;
+            return rules is not null && (rules.FreezePeriod || rules.GamePaused);
+        }
+        catch
+        {
+            // Without game rules the clock simply keeps running, as it always did before.
+            _gameRulesProxy = null;
+            return false;
         }
     }
 
@@ -638,7 +710,7 @@ public sealed class AfkService
 
     private bool IsValidHumanCandidate(CCSPlayerController player)
     {
-        if (!player.IsValid || player.UserId is null || player.UserId < 0)
+        if (!player.IsValid || player.UserId is null || player.UserId < 0 || player.IsHLTV)
         {
             return false;
         }
@@ -666,7 +738,7 @@ public sealed class AfkService
         catch (Exception exception)
         {
             // Fail towards "not immune" so a broken admin config cannot silently disable AFK checks.
-            _logger.LogDebug(exception, "{Prefix} Admin immunity check failed for {PlayerName}.", Prefix, player.PlayerName);
+            _logger.LogDebug(exception, "{Prefix} Admin immunity check failed for {PlayerName}.", Prefix, ChatText.SanitizeName(player.PlayerName));
             return false;
         }
     }
@@ -681,7 +753,7 @@ public sealed class AfkService
         {
             if (_config.LogActions)
             {
-                _logger.LogDebug(exception, "{Prefix} Failed to send chat message to {PlayerName}.", Prefix, player.PlayerName);
+                _logger.LogDebug(exception, "{Prefix} Failed to send chat message to {PlayerName}.", Prefix, ChatText.SanitizeName(player.PlayerName));
             }
         }
     }

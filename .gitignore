@@ -1,8 +1,37 @@
+# Build output
 bin/
 obj/
 TestResults/
 *.user
 *.suo
 *.tmp
-*.log
 
+# Logs, local databases and backups
+*.log
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.bak
+
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.ppk
+id_rsa*
+id_ed25519*
+credentials*
+*credentials*.json
+secrets.*
+tokens.json
+
+# Assistant and editor folders
+.claude/
+.vs/
+.idea/

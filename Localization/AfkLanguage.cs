@@ -34,6 +34,24 @@ public sealed class AfkLanguage
     [JsonPropertyName("moved_to_spectator_spawn_afk")]
     public string MovedToSpectatorSpawnAfk { get; set; } = "{prefix} {player} was moved to spectator for being AFK at spawn.";
 
+    /// <summary>
+    /// Replaces values a language file set to null with the built-in English text, so a broken
+    /// file cannot make message formatting throw.
+    /// </summary>
+    public void FillMissing()
+    {
+        var defaults = new AfkLanguage();
+        Prefix ??= defaults.Prefix;
+        AfkWarning ??= defaults.AfkWarning;
+        SpawnWarning ??= defaults.SpawnWarning;
+        ActionMoveSeconds ??= defaults.ActionMoveSeconds;
+        ActionKickSeconds ??= defaults.ActionKickSeconds;
+        KickReason ??= defaults.KickReason;
+        NoTeamKickReason ??= defaults.NoTeamKickReason;
+        MovedToSpectatorAfk ??= defaults.MovedToSpectatorAfk;
+        MovedToSpectatorSpawnAfk ??= defaults.MovedToSpectatorSpawnAfk;
+    }
+
     public string FormatAfkWarning(string action)
     {
         return ReplaceCommon(AfkWarning, action);

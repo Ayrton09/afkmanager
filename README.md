@@ -1,151 +1,151 @@
+<div align="center">
+
 # AFK Manager
 
-## Detection Rules
+**Warns, moves to spectator and kicks AFK players in Counter-Strike 2.**
 
-- Players are considered active only when their view angles change. The check uses a small tolerance so tiny jitter does not count as movement.
-- The inactivity clock is **paused** while a player is dead, and resumes where it left off once they respawn. Waiting to respawn therefore neither accumulates AFK time nor clears it, so a player cannot reset their AFK timer just by dying every round.
-- Spawn AFK tracking restarts on player spawn, on team change once the player is alive on T/CT, and at round freeze end for alive T/CT players. This window is separate from the inactivity clock above.
-- The view angle baseline is taken on the first check after spawning rather than at the spawn event itself, because pawn angles at spawn time may not reflect the spawn point yet.
-- Spectators are tracked through their observer pawn, so camera movement counts as activity. If the plugin moved someone to spectator, moving the camera again cancels a pending kick. Switching between the player pawn and the observer pawn re-establishes the angle baseline instead of counting as movement.
-- Joining a playable team from spectator or team selection clears accumulated inactivity, since it takes deliberate input. T/CT swaps do not, because those are usually the server auto-balancing.
-- Spectators are ignored by default with `ignore_spectators`. This does not ignore players who are still in team selection.
-- Players with no selected team are tracked separately by time spent in the no-team/team-selection state. They are not treated as spectators and are not exempted by `ignore_spectators`.
-- Admins matching `admin_immunity_flags` are skipped when `admin_immunity` is enabled. If the admin lookup fails, the player is treated as **not** immune so a broken admin config cannot silently disable AFK checks.
+[![Release](https://img.shields.io/github/v/release/Ayrton09/afkmanager?style=flat-square&color=success)](https://github.com/Ayrton09/afkmanager/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/Ayrton09/afkmanager/build.yml?branch=main&style=flat-square&label=build)](https://github.com/Ayrton09/afkmanager/actions/workflows/build.yml)
+[![Downloads](https://img.shields.io/github/downloads/Ayrton09/afkmanager/total?style=flat-square&color=brightgreen)](https://github.com/Ayrton09/afkmanager/releases)
+[![License](https://img.shields.io/github/license/Ayrton09/afkmanager?style=flat-square)](LICENSE)
+[![.NET](https://img.shields.io/badge/.NET-10-512BD4?style=flat-square)](https://dotnet.microsoft.com/)
+[![CounterStrikeSharp](https://img.shields.io/badge/CounterStrikeSharp-%E2%89%A5%201.0.380-F5834A?style=flat-square)](https://docs.cssharp.dev/)
 
-## Performance
+</div>
 
-- The plugin checks players on `check_interval_seconds`; it does not run AFK detection every server tick.
-- The default interval is 5 seconds. For very full public servers, 5-10 seconds is a good practical range.
-- The periodic check reuses its internal slot collections and caches admin immunity flags.
-- Language files are parsed on plugin load and on config reload, and the resolved language is then served from a field, so formatting a warning does not re-resolve it.
-- Logging is disabled by default. If `log_actions` is enabled, only real actions such as move/kick attempts are logged; repeated warnings are not logged.
+---
 
-## Language
+Players who stop moving their view get countdown warnings in chat, are moved to spectator, and can optionally be kicked. Players who sit at the spawn without moving and players who never pick a team are handled on their own, shorter timers. Freeze time, match pauses and timeouts never count as AFK time.
 
-The plugin uses the language configured in CounterStrikeSharp `ServerLanguage`.
+## Contents
 
-Example: if CounterStrikeSharp is configured with `ServerLanguage` set to `es`, AFK Manager uses `Lang/es.json`.
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Commands](#commands)
+- [How Detection Works](#how-detection-works)
+- [Languages](#languages)
+- [Building](#building)
+- [Upgrading from 1.1.x](#upgrading-from-11x)
+- [Upgrading from 1.0.x](#upgrading-from-10x)
+- [License](#license)
 
-A region-specific value falls back to its neutral language (`pt-br` uses `pt.json`), and an unknown value falls back to `en.json`. Every fallback is written to the server log, so a typo in `ServerLanguage` is visible instead of silently serving English.
+## Features
 
-Language files live in:
+- Countdown warnings in chat before every action
+- Move to spectator for idle players, with an optional kick afterwards
+- A separate, shorter spawn AFK window for players who never move after spawning
+- Players stuck in team selection are moved to spectator and optionally kicked
+- The AFK clock pauses while a player is dead, so dying every round does not reset it
+- Clocks stop during freeze time, including `mp_pause_match` pauses and timeouts
+- Optional immunity for admins by permission flag
+- Bots, SourceTV and spectators can be left out
+- Seven languages, following CounterStrikeSharp's `ServerLanguage`
 
-```text
-AfkManager/Lang/
-```
+## Requirements
 
-Included files:
+- CounterStrikeSharp **1.0.380** or newer (and the Metamod:Source build it requires)
 
-- `de.json`
-- `es.json`
-- `en.json`
-- `fr.json`
-- `pt.json`
-- `ru.json`
-- `zh.json`
+## Installation
 
-Warnings and kick reasons are loaded from the language file. Warnings are chat-only.
+**1.** Download the latest ZIP from [Releases](https://github.com/Ayrton09/afkmanager/releases).
 
-## Action Flow
-
-All thresholds are seconds. Set a threshold to `0` to disable that stage.
-
-For team players:
-
-1. `spawn_warning_time_seconds`: how many seconds before the spawn move action countdown warnings start.
-2. `spawn_move_to_spectator_time_seconds`: moves a player to spectator if they spawned and never moved their view.
-3. After the player has moved their view once, `warning_time_seconds` controls how many seconds before the normal move/kick action countdown warnings start.
-4. `move_to_spectator_time_seconds`: moves the player to spectator once.
-5. `kick_time_seconds`: kicks the player once with the language file's `kick_reason`. If the plugin already moved the player to spectator, the kick timer can still finish without sending spectator warning spam. Default is `0`, disabled.
-
-For players who have not chosen a team:
-
-1. `no_team_move_to_spectator_time_seconds`: moves them to spectator if they do not choose a team. Default is `10`.
-2. `no_team_kick_time_seconds`: kicks them with `no_team_kick_reason`. If `no_team_move_to_spectator_time_seconds` moved them first, the kick timer can still finish. Default is `0`, disabled.
-
-Countdown warning steps are controlled by `repeat_warning_interval_seconds`.
-Example: if `spawn_move_to_spectator_time_seconds` is `15`, `spawn_warning_time_seconds` is `10`, and `repeat_warning_interval_seconds` is `5`, the player is warned at 10 seconds remaining and 5 seconds remaining.
-If a warning time is higher than the action time, it is capped internally to the action time.
-
-## Project Structure
-
-```text
-afkmanager/
-  AfkManager.csproj
-  AfkManagerPlugin.cs
-  Config/
-    AfkManagerConfig.cs
-  Core/
-    AfkService.cs
-    PlayerAfkState.cs
-  Localization/
-    AfkLanguage.cs
-    AfkLanguageManager.cs
-    ChatText.cs
-  Tests/
-    AfkManager.Tests.csproj
-    Program.cs
-  Lang/
-    de.json
-    es.json
-    en.json
-    fr.json
-    pt.json
-    ru.json
-    zh.json
-  Samples/
-    afkmanager.example.json
-  README.md
-```
-
-## Install
-
-1. Create a plugin folder on the server:
+**2.** Extract the `afkmanager` folder into `game/csgo/addons/counterstrikesharp/plugins/`. The resulting layout:
 
 ```text
 game/csgo/addons/counterstrikesharp/plugins/afkmanager/
+  afkmanager.dll
+  Lang/
+    de.json  en.json  es.json  fr.json  pt.json  ru.json  zh.json
 ```
 
-2. Copy the release output files into that folder.
-3. Start the server once so CounterStrikeSharp can generate the config, or copy `Samples/afkmanager.example.json` into the plugin config location used by your CounterStrikeSharp install.
-4. Adjust thresholds in CounterStrikeSharp's generated plugin config and reload the plugin or run `css_afk_reload`.
-
-The active config is normally generated by CounterStrikeSharp under:
+**3.** Start the server. CounterStrikeSharp generates the config at:
 
 ```text
 game/csgo/addons/counterstrikesharp/configs/plugins/afkmanager/afkmanager.json
 ```
 
+`Samples/afkmanager.example.json` has the same defaults if you prefer to create it by hand.
+
+**4.** Adjust the values and run `css_afk_reload`.
+
+## Configuration
+
+All times are in seconds. Set an action time to `0` to turn that action off.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `enabled` | `true` | Turns the plugin on or off |
+| `check_interval_seconds` | `5` | How often players are checked (1 to 60). 5 to 10 is a good range for full servers |
+| `spawn_warning_time_seconds` | `10` | Spawn AFK warnings start this many seconds before the move |
+| `spawn_move_to_spectator_time_seconds` | `15` | Moves a player who spawned and never moved their view |
+| `warning_time_seconds` | `30` | Regular warnings start this many seconds before the move or kick |
+| `move_to_spectator_time_seconds` | `90` | Moves an idle player to spectator |
+| `kick_time_seconds` | `0` | Kicks an idle player. Counts total idle time, so it should be higher than the move time |
+| `no_team_move_to_spectator_time_seconds` | `10` | Moves a player who has not picked a team |
+| `no_team_kick_time_seconds` | `0` | Kicks a player who has not picked a team |
+| `repeat_warning_interval_seconds` | `5` | Step between countdown warnings. `0` turns warnings off |
+| `ignore_bots` | `true` | Leaves bots out. SourceTV is always left out |
+| `ignore_spectators` | `true` | Leaves spectators out, unless the plugin moved them there and a kick is pending. Players in team selection are still tracked |
+| `admin_immunity` | `false` | Skips players who have every flag in `admin_immunity_flags` |
+| `admin_immunity_flags` | `["@css/generic"]` | Permission flags from `configs/admins.json`. A player needs all of them to be immune |
+| `log_actions` | `false` | Logs every move and kick to the server log. Warnings are never logged |
+
+Countdown example: with `spawn_move_to_spectator_time_seconds` at `15`, `spawn_warning_time_seconds` at `10` and `repeat_warning_interval_seconds` at `5`, the player is warned with 10 and 5 seconds left. A warning time higher than its action time is capped to the action time.
+
+The kick reason from the language file is sent to the player in chat right before the kick. The disconnect itself uses the engine's idle kick reason.
+
 ## Commands
 
-- `css_afk_reload`: reload config. Requires `@css/config`.
-- `css_afk_config`: print active runtime config values. Requires `@css/config`.
-- `css_afk_enabled`: print runtime enabled state. Requires `@css/config`.
-- `css_afk_enabled <0|1>`: disable or enable AFK Manager until config reload/map/plugin reload. Requires `@css/config`.
-- `css_afk_status`: print status for all players. Requires `@css/generic`.
-- `css_afk_status <name|#userid>`: print status for matching players.
+| Command | Permission | Description |
+| --- | --- | --- |
+| `css_afk_reload` | `@css/config` | Reloads the config and the language file |
+| `css_afk_config` | `@css/config` | Prints the active values |
+| `css_afk_enabled [0\|1]` | `@css/config` | Prints or changes the enabled state |
+| `css_afk_status [name\|#userid]` | `@css/generic` | Prints the AFK state of every player, or of the matching ones. Players without tracking show as not tracked |
 
-To exempt specific players from AFK checks entirely, use `admin_immunity` and `admin_immunity_flags` in the config rather than clearing their timer by hand.
+`css_afk_enabled` lasts until the next config or plugin reload; map changes keep it. Switching it clears all tracking, so nothing that happened while the plugin was off is acted on later.
 
-## Tests
+## How Detection Works
 
-The AFK clock state machine has behavioural tests covering round restarts, death pauses, and reconnects. They are plain assertions with no test framework dependency, and run in CI.
+- A player counts as active only when their view angles change, with a small tolerance so jitter does not count.
+- The idle clock pauses while the player is dead and resumes on respawn. Waiting to respawn neither adds AFK time nor clears it.
+- The spawn AFK window opens on spawn, at the end of freeze time for alive T/CT players, and when an alive player changes team. Its baseline is taken on the first check after it opens, because the view at the spawn event may not match the spawn point yet.
+- Every clock stops during freeze time, match pauses and timeouts, so buying during freeze time or waiting out a pause never counts.
+- Spectators are tracked through their observer view. If the plugin moved someone to spectator, moving the view cancels the pending kick.
+- Joining T or CT from spectator or team selection clears accumulated idle time. T/CT swaps do not, since they are usually auto-balance.
+- If the admin lookup fails, the player is treated as not immune, so a broken admin config cannot turn AFK checks off.
+- Tracking is cleared on map change, disconnect, reconnect on the same slot, plugin unload and whenever the enabled state changes.
+- Kicks use CounterStrikeSharp's typed disconnect instead of a `kickid` console string, so a language file cannot inject console commands. Player names are stripped of control characters and text direction overrides before they reach chat or the log, so a crafted name cannot fake colours or extra lines.
+
+## Languages
+
+The language follows CounterStrikeSharp's `ServerLanguage`: with `es`, the plugin uses `Lang/es.json`. A regional value falls back to its base language (`pt-br` uses `pt.json`) and an unknown one falls back to `en.json`. Every fallback is written to the server log, so a typo in `ServerLanguage` does not go unnoticed.
+
+Included: German (`de`), English (`en`), Spanish (`es`), French (`fr`), Portuguese (`pt`), Russian (`ru`) and Chinese (`zh`). Edit the files in `afkmanager/Lang/` to change the chat messages, then run `css_afk_reload`. A key missing from a file uses the built-in English text. Replies to the admin commands are always in English.
+
+## Building
 
 ```bash
-dotnet run --project Tests
+dotnet build AfkManager.csproj -c Release
 ```
 
-## Notes
+The plugin is written to `bin/Release/net10.0/`.
 
-- No team balancing logic is included.
-- Bot, spectator, and admin immunity behavior are configurable.
-- State is cleared on map end, map start, disconnect, plugin unload, and reconnect identity changes.
-- Kicks use the CounterStrikeSharp typed disconnect API rather than a `kickid` console string, so a language file can never inject console commands.
-- Player names are stripped of control characters before being printed to chat, so a crafted name cannot recolour or spoof the move announcement.
+## Upgrading from 1.1.x
+
+- CounterStrikeSharp 1.0.380 or newer is now required.
+- Freeze time, match pauses and timeouts no longer count as AFK time, so on servers with long freeze times players are moved a little later than before.
+- `css_afk_enabled` and a config reload that changes `enabled` now clear all tracking, and nothing is tracked while the plugin is off.
+- The config schema is unchanged, so existing `afkmanager.json` files keep working.
 
 ## Upgrading from 1.0.x
 
-- `css_afk_reset` was removed. It cleared all AFK enforcement for a player, which made it usable as a self-exemption bind, and `admin_immunity` covers the legitimate case properly.
-- The unused `action_moved_soon`, `action_kicked_soon`, and `action_punished_soon` keys were removed from the language files. Leaving them in a custom language file is harmless; they are ignored.
-- The plugin config schema is unchanged, so existing `afkmanager.json` files keep working.
-- `move_to_spectator_time_seconds` and `kick_time_seconds` now actually accumulate across rounds. If you previously set them low because they never seemed to fire, re-check those values before deploying.
+- `css_afk_reset` was removed: it could be bound as a self exemption. Use `admin_immunity` instead.
+- The unused `action_moved_soon`, `action_kicked_soon` and `action_punished_soon` language keys were removed. Leaving them in a custom file is harmless.
+- `move_to_spectator_time_seconds` and `kick_time_seconds` now accumulate across rounds. If you set them low because they never seemed to fire, check them again.
+
+## License
+
+Released under the [MIT License](LICENSE).

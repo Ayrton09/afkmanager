@@ -99,6 +99,7 @@ public sealed class AfkLanguageManager
         {
             var json = File.ReadAllText(languagePath);
             loaded = JsonSerializer.Deserialize<AfkLanguage>(json, JsonOptions) ?? new AfkLanguage();
+            loaded.FillMissing();
             _cache[language] = loaded;
             return true;
         }
