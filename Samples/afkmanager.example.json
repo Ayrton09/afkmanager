@@ -18,6 +18,7 @@
   "repeat_warning_interval_seconds": 5.0,
 
   "min_players": 0,
+  "kick_min_players": 0,
 
   "ignore_bots": true,
   "ignore_spectators": true,
@@ -29,5 +30,5 @@
 
   "log_actions": false,
 
-  "ConfigVersion": 5
+  "ConfigVersion": 6
 }

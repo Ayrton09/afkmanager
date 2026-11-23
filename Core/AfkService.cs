@@ -35,6 +35,10 @@ public sealed class AfkService
     // but no warning, move or kick happens.
     private bool _actionsHeld;
 
+    // True while fewer human players than kick_min_players are on the server: moves still
+    // happen, kicks and kick warnings do not.
+    private bool _kicksHeld;
+
     public AfkService(AfkManagerConfig config, AfkLanguageManager languageManager, ILogger logger)
     {
         _config = config;
@@ -138,7 +142,9 @@ public sealed class AfkService
 
         var now = Now();
         _seenSlots.Clear();
-        _actionsHeld = _config.MinPlayers > 0 && CountHumanPlayers() < _config.MinPlayers;
+        var humanPlayers = _config.MinPlayers > 0 || _config.KickMinPlayers > 0 ? CountHumanPlayers() : 0;
+        _actionsHeld = _config.MinPlayers > 0 && humanPlayers < _config.MinPlayers;
+        _kicksHeld = _config.KickMinPlayers > 0 && humanPlayers < _config.KickMinPlayers;
 
         foreach (var player in Utilities.GetPlayers())
         {
@@ -493,7 +499,11 @@ public sealed class AfkService
         AfkActionKind actionKind,
         DateTimeOffset now)
     {
-        if (_actionsHeld || !_config.IsRepeatWarningEnabled || warningLeadSeconds <= 0 || actionTimeSeconds <= 0)
+        if (_actionsHeld
+            || (_kicksHeld && actionKind == AfkActionKind.Kick)
+            || !_config.IsRepeatWarningEnabled
+            || warningLeadSeconds <= 0
+            || actionTimeSeconds <= 0)
         {
             return;
         }
@@ -626,7 +636,7 @@ public sealed class AfkService
 
     private void KickPlayer(CCSPlayerController player, PlayerAfkState state, AfkWarningKind kind)
     {
-        if (_actionsHeld)
+        if (_actionsHeld || _kicksHeld)
         {
             return;
         }

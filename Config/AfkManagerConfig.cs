@@ -5,7 +5,7 @@ namespace AfkManager.Config;
 
 public sealed class AfkManagerConfig : BasePluginConfig
 {
-    public override int Version { get; set; } = 5;
+    public override int Version { get; set; } = 6;
 
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; } = true;
@@ -40,6 +40,9 @@ public sealed class AfkManagerConfig : BasePluginConfig
     [JsonPropertyName("min_players")]
     public int MinPlayers { get; set; } = 0;
 
+    [JsonPropertyName("kick_min_players")]
+    public int KickMinPlayers { get; set; } = 0;
+
     [JsonPropertyName("ignore_bots")]
     public bool IgnoreBots { get; set; } = true;
 
@@ -70,6 +73,7 @@ public sealed class AfkManagerConfig : BasePluginConfig
         NoTeamKickTimeSeconds = NormalizeThreshold(NoTeamKickTimeSeconds);
         RepeatWarningIntervalSeconds = NormalizeThreshold(RepeatWarningIntervalSeconds);
         MinPlayers = Math.Clamp(MinPlayers, 0, 64);
+        KickMinPlayers = Math.Clamp(KickMinPlayers, 0, 64);
 
         AdminImmunityFlags ??= [];
         AdminImmunityFlags = AdminImmunityFlags

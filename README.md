@@ -27,6 +27,7 @@ Players who stop moving their view get countdown warnings in chat, are moved to 
 - [How Detection Works](#how-detection-works)
 - [Languages](#languages)
 - [Building](#building)
+- [Upgrading from 1.2.1](#upgrading-from-121)
 - [Upgrading from 1.2.0](#upgrading-from-120)
 - [Upgrading from 1.1.x](#upgrading-from-11x)
 - [Upgrading from 1.0.x](#upgrading-from-10x)
@@ -88,6 +89,7 @@ All times are in seconds. Set an action time to `0` to turn that action off.
 | `no_team_kick_time_seconds` | `0` | Kicks a player who has not picked a team |
 | `repeat_warning_interval_seconds` | `5` | Step between countdown warnings. `0` turns warnings off |
 | `min_players` | `0` | Moves and kicks only happen with at least this many human players on the server, spectators included. Below it no warnings are sent, and a player who went past a time while it was held is acted on as soon as the count is reached. `0` turns it off |
+| `kick_min_players` | `0` | Like `min_players`, but only for kicks: below it AFK players are still warned and moved to spectator, and kicks and kick warnings wait until the count is reached. `0` turns it off |
 | `ignore_bots` | `true` | Leaves bots out. SourceTV is always left out |
 | `ignore_spectators` | `true` | Leaves spectators out, unless the plugin moved them there and a kick is pending. Players in team selection are still tracked |
 | `admin_immunity` | `false` | Skips players who have every flag in `admin_immunity_flags` |
@@ -134,6 +136,10 @@ dotnet build AfkManager.csproj -c Release
 ```
 
 The plugin is written to `bin/Release/net10.0/`.
+
+## Upgrading from 1.2.1
+
+- New `kick_min_players` option. It defaults to `0` (off), so existing `afkmanager.json` files behave as before. The config version is now `6`.
 
 ## Upgrading from 1.2.0
 

@@ -34,7 +34,7 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
     private bool _mapRunning;
 
     public override string ModuleName => "afkmanager";
-    public override string ModuleVersion => "1.2.1";
+    public override string ModuleVersion => "1.2.2";
     public override string ModuleAuthor => "Ayrton09";
     public override string ModuleDescription => "Warns, moves to spectator, and kicks AFK players.";
 
@@ -296,7 +296,7 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
         command.ReplyToCommand($"{Prefix} enabled={(Config.Enabled ? 1 : 0)} css_language={GetCounterStrikeSharpLanguageName()} check_interval={Config.CheckIntervalSeconds}s");
         command.ReplyToCommand($"{Prefix} spawn_warning={FormatConfigSeconds(Config.SpawnWarningTimeSeconds)} spawn_move={FormatConfigSeconds(Config.SpawnMoveToSpectatorTimeSeconds)} repeat_warning={FormatConfigSeconds(Config.RepeatWarningIntervalSeconds)}");
         command.ReplyToCommand($"{Prefix} warning={FormatConfigSeconds(Config.WarningTimeSeconds)} move={FormatConfigSeconds(Config.MoveToSpectatorTimeSeconds)} kick={FormatConfigSeconds(Config.KickTimeSeconds)}");
-        command.ReplyToCommand($"{Prefix} no_team_move={FormatConfigSeconds(Config.NoTeamMoveToSpectatorTimeSeconds)} no_team_kick={FormatConfigSeconds(Config.NoTeamKickTimeSeconds)} min_players={Config.MinPlayers}");
+        command.ReplyToCommand($"{Prefix} no_team_move={FormatConfigSeconds(Config.NoTeamMoveToSpectatorTimeSeconds)} no_team_kick={FormatConfigSeconds(Config.NoTeamKickTimeSeconds)} min_players={Config.MinPlayers} kick_min_players={Config.KickMinPlayers}");
     }
 
     [ConsoleCommand("css_afk_status", "Prints AFK status for all players, or for a target name/#userid.")]
