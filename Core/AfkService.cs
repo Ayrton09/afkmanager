@@ -31,6 +31,10 @@ public sealed class AfkService
     private long _lastTimestamp = Stopwatch.GetTimestamp();
     private bool _clockStopped;
 
+    // True while fewer human players than min_players are on the server: clocks keep running,
+    // but no warning, move or kick happens.
+    private bool _actionsHeld;
+
     public AfkService(AfkManagerConfig config, AfkLanguageManager languageManager, ILogger logger)
     {
         _config = config;
@@ -134,6 +138,7 @@ public sealed class AfkService
 
         var now = Now();
         _seenSlots.Clear();
+        _actionsHeld = _config.MinPlayers > 0 && CountHumanPlayers() < _config.MinPlayers;
 
         foreach (var player in Utilities.GetPlayers())
         {
@@ -433,6 +438,21 @@ public sealed class AfkService
         viewAngles = default;
         fromObserverPawn = false;
 
+        // After a bot takeover the player pawn handle still points at the player's own dead
+        // pawn, whose angles never change; the bot they now control is behind the pawn handle.
+        var controlledPawn = GetControlledBotPawn(player);
+        if (controlledPawn is not null)
+        {
+            var botEyeAngles = controlledPawn.EyeAngles;
+            if (botEyeAngles is null)
+            {
+                return false;
+            }
+
+            viewAngles = AngleSample.FromQAngle(botEyeAngles);
+            return true;
+        }
+
         var playerPawn = player.PlayerPawn.Value;
         if (playerPawn is not null && playerPawn.IsValid)
         {
@@ -473,7 +493,7 @@ public sealed class AfkService
         AfkActionKind actionKind,
         DateTimeOffset now)
     {
-        if (!_config.IsRepeatWarningEnabled || warningLeadSeconds <= 0 || actionTimeSeconds <= 0)
+        if (_actionsHeld || !_config.IsRepeatWarningEnabled || warningLeadSeconds <= 0 || actionTimeSeconds <= 0)
         {
             return;
         }
@@ -538,6 +558,11 @@ public sealed class AfkService
 
     private void MoveToSpectator(CCSPlayerController player, PlayerAfkState state, AfkWarningKind kind)
     {
+        if (_actionsHeld)
+        {
+            return;
+        }
+
         try
         {
             if (player.Team == CsTeam.Spectator)
@@ -601,6 +626,11 @@ public sealed class AfkService
 
     private void KickPlayer(CCSPlayerController player, PlayerAfkState state, AfkWarningKind kind)
     {
+        if (_actionsHeld)
+        {
+            return;
+        }
+
         if (kind == AfkWarningKind.NoTeam)
         {
             state.NoTeamKickAttempted = true;
@@ -698,7 +728,13 @@ public sealed class AfkService
     {
         try
         {
-            return player.PawnIsAlive;
+            if (player.PawnIsAlive)
+            {
+                return true;
+            }
+
+            var controlledPawn = GetControlledBotPawn(player);
+            return controlledPawn is not null && controlledPawn.LifeState == (byte)LifeState_t.LIFE_ALIVE;
         }
         catch
         {
@@ -706,6 +742,39 @@ public sealed class AfkService
             // this runs for every player on every check tick, so it must not log.
             return false;
         }
+    }
+
+    /// <summary>
+    /// The bot pawn a dead player took over, or null when the player is not controlling a bot.
+    /// </summary>
+    private static CCSPlayerPawn? GetControlledBotPawn(CCSPlayerController player)
+    {
+        if (!player.ControllingBot)
+        {
+            return null;
+        }
+
+        var pawn = player.Pawn.Value;
+        if (pawn is null || !pawn.IsValid || pawn.DesignerName != "player")
+        {
+            return null;
+        }
+
+        return pawn.As<CCSPlayerPawn>();
+    }
+
+    private static int CountHumanPlayers()
+    {
+        var count = 0;
+        foreach (var player in Utilities.GetPlayers())
+        {
+            if (player.IsValid && !player.IsBot && !player.IsHLTV)
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     private bool IsValidHumanCandidate(CCSPlayerController player)
