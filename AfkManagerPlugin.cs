@@ -34,7 +34,7 @@ public sealed class AfkManagerPlugin : BasePlugin, IPluginConfig<AfkManagerConfi
     private bool _mapRunning;
 
     public override string ModuleName => "afkmanager";
-    public override string ModuleVersion => "1.2.2";
+    public override string ModuleVersion => "1.2.3";
     public override string ModuleAuthor => "Ayrton09";
     public override string ModuleDescription => "Warns, moves to spectator, and kicks AFK players.";
 

@@ -5,6 +5,8 @@ namespace AfkManager.Config;
 
 public sealed class AfkManagerConfig : BasePluginConfig
 {
+    // Without the name here the override is written a second time as "Version".
+    [JsonPropertyName("ConfigVersion")]
     public override int Version { get; set; } = 6;
 
     [JsonPropertyName("enabled")]
@@ -84,12 +86,26 @@ public sealed class AfkManagerConfig : BasePluginConfig
         AdminImmunityFlagsArray = AdminImmunityFlags.ToArray();
     }
 
+    // Derived from the times above; not written to the config file.
+    [JsonIgnore]
     public bool IsSpawnMoveEnabled => SpawnMoveToSpectatorTimeSeconds > 0;
+
+    [JsonIgnore]
     public bool IsMoveEnabled => MoveToSpectatorTimeSeconds > 0;
+
+    [JsonIgnore]
     public bool IsKickEnabled => KickTimeSeconds > 0;
+
+    [JsonIgnore]
     public bool IsNoTeamMoveEnabled => NoTeamMoveToSpectatorTimeSeconds > 0;
+
+    [JsonIgnore]
     public bool IsNoTeamKickEnabled => NoTeamKickTimeSeconds > 0;
+
+    [JsonIgnore]
     public bool IsRepeatWarningEnabled => RepeatWarningIntervalSeconds > 0;
+
+    [JsonIgnore]
     public int RepeatWarningIntervalSecondsInt => Math.Max(1, (int)Math.Round(RepeatWarningIntervalSeconds));
 
     private static float NormalizeThreshold(float value)
